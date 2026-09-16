@@ -1,0 +1,187 @@
+import type { JSX } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { apiBaseUrl } from '../config/apiConfig';
+import { humanize } from '../utils/errorHandling';
+import { ErrorMessage } from './ui/error-message';
+import { Skeleton } from './ui/skeleton';
+
+type GrantScope = 'all' | 'own' | null;
+type OperationKey = 'read' | 'create' | 'update' | 'delete';
+type PermissionRow = Record<OperationKey, GrantScope>;
+
+interface PermissionView {
+  roles: string[];
+  paths: string[];
+  matrix: Record<string, Record<string, PermissionRow>>;
+}
+
+interface GrantedOperation {
+  key: OperationKey;
+  label: string;
+  scope: 'all' | 'own';
+}
+
+const RESOURCE_LABELS: Record<string, string | undefined> = {
+  games: 'Games',
+  'games.leaderboard': 'Games › Game Leaderboard',
+  players: 'Players',
+  matches: 'Matches',
+  leaderboards: 'Leaderboards',
+};
+
+const ROLE_LABELS: Record<string, string | undefined> = {
+  guest: 'Guest',
+  unassigned: 'Unassigned',
+  admin: 'Admin',
+  player: 'Player',
+  scorekeeper: 'Scorekeeper',
+};
+
+const OPERATIONS: Array<{ key: OperationKey; label: string }> = [
+  { key: 'read', label: 'Read' },
+  { key: 'create', label: 'Create' },
+  { key: 'update', label: 'Update' },
+  { key: 'delete', label: 'Delete' },
+];
+
+function resourceLabel(path: string): string {
+  return RESOURCE_LABELS[path] ?? path.split('.').map(humanize).join(' › ');
+}
+
+function roleLabel(role: string): string {
+  return ROLE_LABELS[role] ?? humanize(role);
+}
+
+function grantedOperations(row: PermissionRow): GrantedOperation[] {
+  const granted: GrantedOperation[] = [];
+  for (const operation of OPERATIONS) {
+    const scope = row[operation.key] ?? null;
+    if (scope !== null) {
+      granted.push({ key: operation.key, label: operation.label, scope });
+    }
+  }
+  return granted;
+}
+
+function PermissionCell({ row }: { row: PermissionRow }): JSX.Element {
+  const granted = grantedOperations(row);
+  if (granted.length === 0) {
+    return <span className="text-xs text-muted-foreground">No access</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {granted.map((operation) => (
+        <span
+          key={operation.key}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary-text"
+        >
+          <span>{operation.label}</span>
+          <span className="opacity-70">
+            {operation.scope === 'all' ? 'all records' : 'own records'}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function RolePermissions(): JSX.Element {
+  const [view, setView] = useState<PermissionView | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const fetchView = async (): Promise<void> => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/admin/roles/permissions`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch role permissions');
+      }
+      const data = (await response.json()) as PermissionView;
+      setView(data);
+    } catch (error) {
+      setErrorMessage('Failed to fetch role permissions');
+      console.error('Failed to fetch role permissions:', error);
+    }
+  };
+
+  const loadedRef = useRef(false);
+  useEffect(() => {
+    if (loadedRef.current) {
+      return;
+    }
+    loadedRef.current = true;
+    fetchView()
+      .then(() => {
+        setIsLoading(false);
+      })
+      .catch(() => {
+        setIsLoading(false);
+      });
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-start justify-center h-96">
+        <div
+          role="status"
+          aria-label={'Loading…'}
+          className="rounded-xl border border-border bg-card w-full max-w-2xl p-6 space-y-3"
+        >
+          <Skeleton className="h-5 w-1/3" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 lg:py-8 xl:py-10 max-w-7xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl lg:text-3xl font-bold mb-2" data-ls="e0d24108ee">
+          Role Permissions
+        </h1>
+        <p className="text-muted-foreground">Review the access each role has on resources.</p>
+      </div>
+
+      {errorMessage && (
+        <div className="mb-4">
+          <ErrorMessage message={errorMessage} />
+        </div>
+      )}
+
+      {view && (
+        <div className="border border-border rounded-lg overflow-x-auto bg-card">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted">
+                <th className="text-left px-4 py-3 font-semibold">Resource</th>
+                {view.roles.map((role) => (
+                  <th key={role} className="text-left px-4 py-3 font-semibold">
+                    {roleLabel(role)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {view.paths.map((path) => (
+                <tr key={path} className="border-b border-border last:border-b-0">
+                  <td className="px-4 py-3 font-medium align-top whitespace-nowrap">
+                    {resourceLabel(path)}
+                  </td>
+                  {view.roles.map((role) => (
+                    <td key={role} className="px-4 py-3 align-top">
+                      <PermissionCell row={view.matrix[role][path]} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

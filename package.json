@@ -1,0 +1,39 @@
+{
+  "name": "gamerank-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "setup:db": "node database/setup.mjs",
+    "migrate": "node database/migrate.mjs",
+    "setup:auth": "npm run setup:auth --prefix backend",
+    "setup:all": "npm install && npm run setup:db && npm run migrate && npm run setup:auth",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "build": "npm run build --prefix backend && npm run build --prefix frontend",
+    "start": "npm start --prefix backend",
+    "check": "npm run format && concurrently --success all \"npm run check --prefix backend\" \"npm run check --prefix frontend\"",
+    "format": "npm run format --prefix backend && npm run format --prefix frontend"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "overrides": {
+    "shell-quote": ">=1.10.0",
+    "minimatch": ">=10.2.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

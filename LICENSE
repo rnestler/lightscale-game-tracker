@@ -1,0 +1,24 @@
+License
+
+This package was generated with Lightscale AI (https://lightscale.ai).
+
+1. Ownership
+
+Everything in this package - the source code, the database schema, the
+configuration, the documentation, and the data it holds - belongs to the owner
+of the project it was generated from. The owner may use, copy, modify, run,
+self-host, sublicense, and distribute it, in whole or in part, for any purpose,
+without restriction, without attribution, and without notice to or permission
+from Lightscale AI. This is independent of any subscription to the Lightscale
+AI service and survives its end.
+
+Lightscale AI claims no copyright or other rights in this package.
+
+2. Third-party components
+
+This package bundles open-source software under its own licenses, which apply
+to those components. See THIRD-PARTY-NOTICES.txt.
+
+3. No warranty
+
+This package is provided as is, without warranty of any kind.
