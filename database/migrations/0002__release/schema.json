@@ -1,0 +1,47 @@
+{
+  "GameType": {
+    "id": "text",
+    "name": "text",
+    "category": "text",
+    "rulesVariant": "text",
+    "defaultRating": "int8",
+    "description": "text"
+  },
+  "Player": {
+    "id": "text",
+    "nickname": "text",
+    "fullName": "text",
+    "emailAddress": "text",
+    "avatar": "text",
+    "bio": "text",
+    "joinedDate": "date",
+    "userAccountId": "text"
+  },
+  "LeaderboardEntry": {
+    "id": "text",
+    "playerId": "text",
+    "gameId": "text",
+    "rating": "int8",
+    "matchesPlayed": "int8",
+    "wins": "int8",
+    "losses": "int8",
+    "draws": "int8",
+    "lastPlayedAt": "timestamptz"
+  },
+  "Match": {
+    "id": "text",
+    "gameId": "text",
+    "playerOneId": "text",
+    "playerTwoId": "text",
+    "scheduledAt": "timestamptz",
+    "status": "text",
+    "outcome": "text",
+    "playerOneScore": "numeric",
+    "playerTwoScore": "numeric",
+    "playerOneRatingDelta": "int8",
+    "playerTwoRatingDelta": "int8",
+    "notes": "text",
+    "recordedById": "text",
+    "createdAt": "timestamptz"
+  }
+}

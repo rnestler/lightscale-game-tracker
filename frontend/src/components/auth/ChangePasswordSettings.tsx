@@ -1,14 +1,17 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { authClient } from '../../api/authClient.js';
+import { useSetupStatus } from '../../api/setupStatus.js';
 import { getErrorMessage, isInvalidPasswordError } from '../../utils/errorHandling.js';
 
-const MIN_PASSWORD_LENGTH = 8;
+const MIN_PASSWORD_LENGTH = 10;
 
 export function ChangePasswordSettings(): JSX.Element {
   const { changePassword, user } = useAuth();
+  const setupStatus = useSetupStatus();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -49,11 +52,11 @@ export function ChangePasswordSettings(): JSX.Element {
     setSuccess(null);
 
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError('Your new password must be at least 8 characters.');
+      setError(i18n.chrome.passwordTooShort);
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('The new password and its confirmation do not match.');
+      setError(i18n.chrome.passwordsDoNotMatch);
       return;
     }
 
@@ -61,12 +64,12 @@ export function ChangePasswordSettings(): JSX.Element {
     try {
       await changePassword(currentPassword, newPassword);
       resetFields();
-      setSuccess('Your password has been changed.');
+      setSuccess(i18n.chrome.passwordChangedSuccess);
     } catch (err) {
       setError(
         isInvalidPasswordError(err)
-          ? 'Your current password is incorrect.'
-          : getErrorMessage(err, 'Could not change your password. Please try again.')
+          ? i18n.chrome.currentPasswordIncorrect
+          : getErrorMessage(err, i18n.chrome.passwordChangeFailed)
       );
       console.error('Failed to change password', err);
     } finally {
@@ -90,8 +93,10 @@ export function ChangePasswordSettings(): JSX.Element {
         className="flex flex-col gap-6 lg:gap-8"
       >
         <div className="flex flex-col gap-2">
-          <h3 className="text-lg font-semibold text-foreground">Change Password</h3>
-          <p className="text-sm text-muted-foreground">Update the password you use to sign in.</p>
+          <h3 className="text-lg font-semibold text-foreground">
+            {i18n.chrome.changePasswordTitle}
+          </h3>
+          <p className="text-sm text-muted-foreground">{i18n.chrome.changePasswordDescription}</p>
         </div>
 
         {error && (
@@ -108,7 +113,7 @@ export function ChangePasswordSettings(): JSX.Element {
 
         <div className="flex flex-col gap-2">
           <label htmlFor="currentPassword" className="text-sm font-medium text-foreground">
-            Current Password
+            {i18n.chrome.currentPasswordLabel}
           </label>
           <div className="relative">
             <input
@@ -130,7 +135,7 @@ export function ChangePasswordSettings(): JSX.Element {
               }}
               className={toggleClass}
               tabIndex={-1}
-              aria-label={showPasswords ? 'Hide' : 'Show'}
+              aria-label={showPasswords ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
             >
               {showPasswords ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -139,7 +144,7 @@ export function ChangePasswordSettings(): JSX.Element {
 
         <div className="flex flex-col gap-2">
           <label htmlFor="newPassword" className="text-sm font-medium text-foreground">
-            New Password
+            {i18n.chrome.newPasswordLabel}
           </label>
           <div className="relative">
             <input
@@ -161,7 +166,7 @@ export function ChangePasswordSettings(): JSX.Element {
               }}
               className={toggleClass}
               tabIndex={-1}
-              aria-label={showPasswords ? 'Hide' : 'Show'}
+              aria-label={showPasswords ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
             >
               {showPasswords ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -170,7 +175,7 @@ export function ChangePasswordSettings(): JSX.Element {
 
         <div className="flex flex-col gap-2">
           <label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">
-            Confirm New Password
+            {i18n.chrome.confirmNewPasswordLabel}
           </label>
           <div className="relative">
             <input
@@ -192,7 +197,7 @@ export function ChangePasswordSettings(): JSX.Element {
               }}
               className={toggleClass}
               tabIndex={-1}
-              aria-label={showPasswords ? 'Hide' : 'Show'}
+              aria-label={showPasswords ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
             >
               {showPasswords ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -205,39 +210,41 @@ export function ChangePasswordSettings(): JSX.Element {
             disabled={isLoading}
             className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? 'Changing…' : 'Change Password'}
+            {isLoading ? i18n.chrome.changingPasswordIndicator : i18n.chrome.changePasswordButton}
           </button>
         </div>
       </form>
 
-      <div className="mt-8 border-t border-border pt-6 flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <h3 className="text-sm font-semibold text-foreground">Forgot your current password?</h3>
-          <p className="text-sm text-muted-foreground">
-            We can email you a secure link to set a new password without entering your current one.
-          </p>
+      {setupStatus.capabilities.passwordReset && (
+        <div className="mt-8 border-t border-border pt-6 flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold text-foreground">
+              {i18n.chrome.resetViaEmailTitle}
+            </h3>
+            <p className="text-sm text-muted-foreground">{i18n.chrome.resetViaEmailDescription}</p>
+          </div>
+          {resetSent ? (
+            <div className="rounded-md border border-border bg-secondary p-3 text-sm text-foreground">
+              {i18n.chrome.resetViaEmailSent}
+            </div>
+          ) : (
+            <div className="flex">
+              <button
+                type="button"
+                disabled={resetLoading}
+                onClick={() => {
+                  handleSendResetLink().catch((err) => {
+                    console.error('Failed to send reset link', err);
+                  });
+                }}
+                className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resetLoading ? i18n.chrome.forgotPasswordSending : i18n.chrome.resetViaEmailButton}
+              </button>
+            </div>
+          )}
         </div>
-        {resetSent ? (
-          <div className="rounded-md border border-border bg-secondary p-3 text-sm text-foreground">
-            If your account uses a password, a reset link is on its way to your email.
-          </div>
-        ) : (
-          <div className="flex">
-            <button
-              type="button"
-              disabled={resetLoading}
-              onClick={() => {
-                handleSendResetLink().catch((err) => {
-                  console.error('Failed to send reset link', err);
-                });
-              }}
-              className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {resetLoading ? 'Sending…' : 'Email me a reset link'}
-            </button>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

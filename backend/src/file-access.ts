@@ -26,3 +26,46 @@ export async function canDownloadFile(fileId: string, caller: Caller): Promise<b
   }
   return false;
 }
+
+type StoredRow = Record<string, unknown>;
+
+function attachedFileIds(value: unknown): string[] {
+  const items: unknown[] = Array.isArray(value) ? value : [value];
+  const ids: string[] = [];
+  for (const item of items) {
+    if (
+      typeof item === 'object' &&
+      item !== null &&
+      !('data' in item) &&
+      'id' in item &&
+      typeof item.id === 'string'
+    ) {
+      ids.push(item.id);
+    }
+  }
+  return ids;
+}
+
+function storesFileId(stored: unknown, fileId: string): boolean {
+  return Array.isArray(stored) ? stored.includes(fileId) : stored === fileId;
+}
+
+export async function unreadableFile(
+  body: StoredRow,
+  fileFields: string[],
+  caller: Caller,
+  loadKept: () => Promise<StoredRow | null>
+): Promise<boolean> {
+  let keptRow: Promise<StoredRow | null> | null = null;
+  for (const fieldName of fileFields) {
+    for (const fileId of attachedFileIds(body[fieldName])) {
+      keptRow ??= loadKept();
+      const kept = await keptRow;
+      const stored = kept !== null && storesFileId(kept[fieldName], fileId);
+      if (!stored && !(await canDownloadFile(fileId, caller))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}

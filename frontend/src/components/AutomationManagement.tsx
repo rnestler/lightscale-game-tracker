@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import { FormulaLines, type FormulaLine } from './FormulaLines';
 import { ArrowDown, Cog, Play, Workflow } from 'lucide-react';
@@ -18,7 +19,7 @@ interface StepEmail {
   label: string;
 }
 interface ChainStep {
-  cause: string;
+  cause: string | null;
   icon: string;
   iconClass: string;
   kindLabel: string;
@@ -33,6 +34,7 @@ interface Chain {
   threads: ChainStep[][];
 }
 interface FunctionGroup {
+  name: string;
   title: string;
   steps: FormulaLine[];
 }
@@ -45,1169 +47,1265 @@ interface CalculationItem {
 }
 interface CalculationGroup {
   record: string;
+  name: string;
   items: CalculationItem[];
 }
 
-const CHAINS: Chain[] = [
-  {
-    title: 'Start Match',
-    threads: [
-      [
+function automationChains(): Chain[] {
+  return [
+    {
+      title: i18n.word("'Start Match'"),
+      threads: [
+        [
+          {
+            cause: null,
+            icon: 'cog',
+            iconClass: 'text-muted-foreground',
+            kindLabel: i18n.chrome.automationKindTransaction,
+            title: i18n.word("'Start Match'"),
+            chips: [
+              { text: i18n.word("'Start Match'"), style: 'action' },
+              {
+                text: `${i18n.chrome.automationCauseUpdates} ${i18n.word('Match')}: ${[i18n.word('Match.status')].join(' · ')}`,
+                style: 'code',
+              },
+            ],
+            steps: [
+              {
+                head: i18n.word("'requires'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchStatus.scheduled'), name: true },
+                  { text: i18n.word('\' · "Match must be scheduled to start"\''), name: false },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('MatchStatus.inProgress'), name: true },
+                ],
+                level: 0,
+              },
+            ],
+            prompts: [],
+            emails: [],
+          },
+        ],
+      ],
+    },
+    {
+      title: i18n.word("'Dispute Result'"),
+      threads: [
+        [
+          {
+            cause: null,
+            icon: 'cog',
+            iconClass: 'text-muted-foreground',
+            kindLabel: i18n.chrome.automationKindTransaction,
+            title: i18n.word("'Dispute Result'"),
+            chips: [
+              { text: i18n.word("'Dispute Result'"), style: 'action' },
+              {
+                text: `${i18n.chrome.automationCauseUpdates} ${i18n.word('Match')}: ${[i18n.word('Match.status')].join(' · ')}`,
+                style: 'code',
+              },
+            ],
+            steps: [
+              {
+                head: i18n.word("'requires'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchStatus.completed'), name: true },
+                  {
+                    text: i18n.word('\' · "Only completed matches can be disputed"\''),
+                    name: false,
+                  },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('MatchStatus.disputed'), name: true },
+                ],
+                level: 0,
+              },
+            ],
+            prompts: [],
+            emails: [],
+          },
+        ],
+      ],
+    },
+    {
+      title: i18n.word("'Cancel Match'"),
+      threads: [
+        [
+          {
+            cause: null,
+            icon: 'cog',
+            iconClass: 'text-muted-foreground',
+            kindLabel: i18n.chrome.automationKindTransaction,
+            title: i18n.word("'Cancel Match'"),
+            chips: [
+              { text: i18n.word("'Cancel Match'"), style: 'action' },
+              {
+                text: `${i18n.chrome.automationCauseUpdates} ${i18n.word('Match')}: ${[i18n.word('Match.status')].join(' · ')}`,
+                style: 'code',
+              },
+            ],
+            steps: [
+              {
+                head: i18n.word("'requires'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchStatus.scheduled'), name: true },
+                  { text: i18n.word("' or '"), name: false },
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchStatus.inProgress'), name: true },
+                  {
+                    text: i18n.word(
+                      '\' · "Only scheduled or in-progress matches can be cancelled"\''
+                    ),
+                    name: false,
+                  },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('MatchStatus.cancelled'), name: true },
+                ],
+                level: 0,
+              },
+            ],
+            prompts: [],
+            emails: [],
+          },
+        ],
+      ],
+    },
+    {
+      title: i18n.word("'Record & Complete Match'"),
+      threads: [
+        [
+          {
+            cause: null,
+            icon: 'cog',
+            iconClass: 'text-muted-foreground',
+            kindLabel: i18n.chrome.automationKindTransaction,
+            title: i18n.word("'Record & Complete Match'"),
+            chips: [
+              { text: i18n.word("'Record & Complete Match'"), style: 'action' },
+              {
+                text: `${i18n.chrome.automationCauseUpdates} ${i18n.word('LeaderboardEntry')}: ${[i18n.word('LeaderboardEntry.rating'), i18n.word('LeaderboardEntry.matchesPlayed'), i18n.word('LeaderboardEntry.wins'), i18n.word('LeaderboardEntry.losses'), i18n.word('LeaderboardEntry.draws'), i18n.word('LeaderboardEntry.lastPlayedAt')].join(' · ')}`,
+                style: 'code',
+              },
+              {
+                text: `${i18n.chrome.automationCauseCreates} ${i18n.word('LeaderboardEntry')}`,
+                style: 'code',
+              },
+              {
+                text: `${i18n.chrome.automationCauseUpdates} ${i18n.word('Match')}: ${[i18n.word('Match.status'), i18n.word('Match.outcome'), i18n.word('Match.playerOneScore'), i18n.word('Match.playerTwoScore'), i18n.word('Match.playerOneRatingDelta'), i18n.word('Match.playerTwoRatingDelta')].join(' · ')}`,
+                style: 'code',
+              },
+            ],
+            steps: [
+              {
+                head: i18n.word("'requires'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchStatus.scheduled'), name: true },
+                  { text: i18n.word("' or '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchStatus.inProgress'), name: true },
+                  {
+                    text: i18n.word('\' · "Match must be scheduled or in progress to complete"\''),
+                    name: false,
+                  },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'p1Rating'"), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('GameType.defaultRating'), name: true },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'p2Rating'"), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('GameType.defaultRating'), name: true },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'p1Found'"), name: true },
+                  { text: i18n.word("' ← no'"), name: false },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'p2Found'"), name: true },
+                  { text: i18n.word("' ← no'"), name: false },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'for each'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'entry'"), name: true },
+                  { text: i18n.word("' of '"), name: false },
+                  { text: i18n.word('leaderboards'), name: true },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.game'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("' and '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.player'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerOne'), name: true },
+                ],
+                level: 1,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'p1Rating'"), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.rating'), name: true },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'p1Found'"), name: true },
+                  { text: i18n.word("' ← yes'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.game'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("' and '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.player'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerTwo'), name: true },
+                ],
+                level: 1,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'p2Rating'"), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.rating'), name: true },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'p2Found'"), name: true },
+                  { text: i18n.word("' ← yes'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'delta1'"), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('computeEloDelta'), name: true },
+                  { text: i18n.word("'('"), name: false },
+                  { text: i18n.word("'p1Rating'"), name: true },
+                  { text: i18n.word("', '"), name: false },
+                  { text: i18n.word("'p2Rating'"), name: true },
+                  { text: i18n.word("', '"), name: false },
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("')'"), name: false },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'delta2'"), name: true },
+                  { text: i18n.word("' ← 0 − '"), name: false },
+                  { text: i18n.word("'delta1'"), name: true },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [{ text: i18n.word("'p1Found'"), name: true }],
+                level: 0,
+              },
+              {
+                head: i18n.word("'for each'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'entry'"), name: true },
+                  { text: i18n.word("' of '"), name: false },
+                  { text: i18n.word('leaderboards'), name: true },
+                ],
+                level: 1,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.game'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("' and '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.player'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerOne'), name: true },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.rating'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.rating'), name: true },
+                  { text: i18n.word("' + '"), name: false },
+                  { text: i18n.word("'delta1'"), name: true },
+                ],
+                level: 3,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.matchesPlayed'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.matchesPlayed'), name: true },
+                  { text: i18n.word("' + 1'"), name: false },
+                ],
+                level: 3,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerOneWin'), name: true },
+                ],
+                level: 3,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.wins'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.wins'), name: true },
+                  { text: i18n.word("' + 1'"), name: false },
+                ],
+                level: 4,
+              },
+              { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 3 },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerTwoWin'), name: true },
+                ],
+                level: 4,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.losses'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.losses'), name: true },
+                  { text: i18n.word("' + 1'"), name: false },
+                ],
+                level: 5,
+              },
+              { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 4 },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.draws'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.draws'), name: true },
+                  { text: i18n.word("' + 1'"), name: false },
+                ],
+                level: 5,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.lastPlayedAt'), name: true },
+                  { text: i18n.word("' ← now'"), name: false },
+                ],
+                level: 3,
+              },
+              { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 0 },
+              {
+                head: i18n.word("'adds'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry'), name: true },
+                  { text: i18n.word("' ('"), name: false },
+                ],
+                level: 1,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.player'), name: true },
+                  { text: i18n.word("': '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerOne'), name: true },
+                  { text: i18n.word("','"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.game'), name: true },
+                  { text: i18n.word("': '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("','"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.rating'), name: true },
+                  { text: i18n.word("': '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('GameType.defaultRating'), name: true },
+                  { text: i18n.word("' + '"), name: false },
+                  { text: i18n.word("'delta1'"), name: true },
+                  { text: i18n.word("','"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.matchesPlayed'), name: true },
+                  { text: i18n.word("': 1,'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.wins'), name: true },
+                  { text: i18n.word("': if '"), name: false },
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerOneWin'), name: true },
+                  { text: i18n.word("' then 1 otherwise 0,'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.losses'), name: true },
+                  { text: i18n.word("': if '"), name: false },
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerTwoWin'), name: true },
+                  { text: i18n.word("' then 1 otherwise 0,'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.draws'), name: true },
+                  { text: i18n.word("': if '"), name: false },
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.draw'), name: true },
+                  { text: i18n.word("' then 1 otherwise 0,'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.lastPlayedAt'), name: true },
+                  { text: i18n.word("': now)'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [{ text: i18n.word("'p2Found'"), name: true }],
+                level: 0,
+              },
+              {
+                head: i18n.word("'for each'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word("'entry'"), name: true },
+                  { text: i18n.word("' of '"), name: false },
+                  { text: i18n.word('leaderboards'), name: true },
+                ],
+                level: 1,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.game'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("' and '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.player'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerTwo'), name: true },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.rating'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.rating'), name: true },
+                  { text: i18n.word("' + '"), name: false },
+                  { text: i18n.word("'delta2'"), name: true },
+                ],
+                level: 3,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.matchesPlayed'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.matchesPlayed'), name: true },
+                  { text: i18n.word("' + 1'"), name: false },
+                ],
+                level: 3,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerTwoWin'), name: true },
+                ],
+                level: 3,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.wins'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.wins'), name: true },
+                  { text: i18n.word("' + 1'"), name: false },
+                ],
+                level: 4,
+              },
+              { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 3 },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerOneWin'), name: true },
+                ],
+                level: 4,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.losses'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.losses'), name: true },
+                  { text: i18n.word("' + 1'"), name: false },
+                ],
+                level: 5,
+              },
+              { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 4 },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.draws'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('LeaderboardEntry.draws'), name: true },
+                  { text: i18n.word("' + 1'"), name: false },
+                ],
+                level: 5,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.lastPlayedAt'), name: true },
+                  { text: i18n.word("' ← now'"), name: false },
+                ],
+                level: 3,
+              },
+              { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 0 },
+              {
+                head: i18n.word("'adds'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry'), name: true },
+                  { text: i18n.word("' ('"), name: false },
+                ],
+                level: 1,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.player'), name: true },
+                  { text: i18n.word("': '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerTwo'), name: true },
+                  { text: i18n.word("','"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.game'), name: true },
+                  { text: i18n.word("': '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("','"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.rating'), name: true },
+                  { text: i18n.word("': '"), name: false },
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.game'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('GameType.defaultRating'), name: true },
+                  { text: i18n.word("' + '"), name: false },
+                  { text: i18n.word("'delta2'"), name: true },
+                  { text: i18n.word("','"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.matchesPlayed'), name: true },
+                  { text: i18n.word("': 1,'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.wins'), name: true },
+                  { text: i18n.word("': if '"), name: false },
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerTwoWin'), name: true },
+                  { text: i18n.word("' then 1 otherwise 0,'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.losses'), name: true },
+                  { text: i18n.word("': if '"), name: false },
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerOneWin'), name: true },
+                  { text: i18n.word("' then 1 otherwise 0,'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.draws'), name: true },
+                  { text: i18n.word("': if '"), name: false },
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.draw'), name: true },
+                  { text: i18n.word("' then 1 otherwise 0,'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: '',
+                operator: false,
+                parts: [
+                  { text: i18n.word('LeaderboardEntry.lastPlayedAt'), name: true },
+                  { text: i18n.word("': now)'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.status'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('MatchStatus.completed'), name: true },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.outcome'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerOneWin'), name: true },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerOneScore'), name: true },
+                  { text: i18n.word("' ← 1'"), name: false },
+                ],
+                level: 1,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerTwoScore'), name: true },
+                  { text: i18n.word("' ← −1'"), name: false },
+                ],
+                level: 1,
+              },
+              { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 0 },
+              {
+                head: i18n.word("'if'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.outcome'), name: true },
+                  { text: i18n.word("' = '"), name: false },
+                  { text: i18n.word('MatchOutcome.playerTwoWin'), name: true },
+                ],
+                level: 1,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerOneScore'), name: true },
+                  { text: i18n.word("' ← −1'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerTwoScore'), name: true },
+                  { text: i18n.word("' ← 1'"), name: false },
+                ],
+                level: 2,
+              },
+              { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 1 },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerOneScore'), name: true },
+                  { text: i18n.word("' ← 0.5'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerTwoScore'), name: true },
+                  { text: i18n.word("' ← 0.5'"), name: false },
+                ],
+                level: 2,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerOneRatingDelta'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word("'delta1'"), name: true },
+                ],
+                level: 0,
+              },
+              {
+                head: i18n.word("'sets'"),
+                operator: false,
+                parts: [
+                  { text: i18n.word('completeMatch.match'), name: true },
+                  { text: i18n.word("' ↳ '"), name: false },
+                  { text: i18n.word('Match.playerTwoRatingDelta'), name: true },
+                  { text: i18n.word("' ← '"), name: false },
+                  { text: i18n.word("'delta2'"), name: true },
+                ],
+                level: 0,
+              },
+            ],
+            prompts: [],
+            emails: [],
+          },
+        ],
+      ],
+    },
+  ];
+}
+
+function automationCalculations(): CalculationGroup[] {
+  return [
+    {
+      record: 'Match',
+      name: i18n.word('Match'),
+      items: [
         {
-          cause: '',
-          icon: 'cog',
-          iconClass: 'text-muted-foreground',
-          kindLabel: 'Transaction',
-          title: 'Start Match',
-          chips: [
-            { text: 'Start Match', style: 'action' },
-            { text: 'updates Match: Status', style: 'code' },
-          ],
-          steps: [
+          key: 'Match.title',
+          lines: [
             {
-              head: 'requires',
+              head: '',
               operator: false,
               parts: [
-                { text: 'Status', name: true },
-                { text: ' = Scheduled · "Match must be scheduled to start"', name: false },
+                { text: i18n.word('Match.title'), name: true },
+                { text: i18n.word("' ='"), name: false },
               ],
               level: 0,
             },
             {
-              head: 'sets',
+              head: '',
               operator: false,
               parts: [
-                { text: 'Status', name: true },
-                { text: ' ← In Progress', name: false },
+                { text: i18n.word("'\"\\{'"), name: false },
+                { text: i18n.word('Match.game'), name: true },
+                { text: i18n.word("' ↳ '"), name: false },
+                { text: i18n.word('GameType.displayName'), name: true },
+                { text: i18n.word("'\\}: \\{'"), name: false },
+                { text: i18n.word('Match.playerOne'), name: true },
+                { text: i18n.word("' ↳ '"), name: false },
+                { text: i18n.word('Player.nickname'), name: true },
+                { text: i18n.word("'\\} vs \\{'"), name: false },
+                { text: i18n.word('Match.playerTwo'), name: true },
+                { text: i18n.word("' ↳ '"), name: false },
+                { text: i18n.word('Player.nickname'), name: true },
+                { text: i18n.word("'\\}\"'"), name: false },
+              ],
+              level: 1,
+            },
+          ],
+          note: i18n.fill(i18n.chrome.calculationNote, {
+            fields: [
+              `${i18n.word('Match.game')}${i18n.word("' ↳ '")}${i18n.word('GameType.displayName')}`,
+              `${i18n.word('Match.playerOne')}${i18n.word("' ↳ '")}${i18n.word('Player.nickname')}`,
+              `${i18n.word('Match.playerTwo')}${i18n.word("' ↳ '")}${i18n.word('Player.nickname')}`,
+            ].join(', '),
+          }),
+          anchor: '0f04ccc836',
+          helpers: [],
+        },
+        {
+          key: 'Match.gameDisplayName',
+          lines: [
+            {
+              head: '',
+              operator: false,
+              parts: [
+                { text: i18n.word('Match.gameDisplayName'), name: true },
+                { text: i18n.word("' = '"), name: false },
+                { text: i18n.word('Match.game'), name: true },
+                { text: i18n.word("' ↳ '"), name: false },
+                { text: i18n.word('GameType.displayName'), name: true },
               ],
               level: 0,
             },
           ],
-          prompts: [],
-          emails: [],
+          note: i18n.fill(i18n.chrome.calculationNote, {
+            fields: [
+              `${i18n.word('Match.game')}${i18n.word("' ↳ '")}${i18n.word('GameType.displayName')}`,
+            ].join(', '),
+          }),
+          anchor: 'f073c574c2',
+          helpers: [],
         },
       ],
-    ],
-  },
-  {
-    title: 'Dispute Result',
-    threads: [
-      [
+    },
+    {
+      record: 'LeaderboardEntry',
+      name: i18n.word('LeaderboardEntry'),
+      items: [
         {
-          cause: '',
-          icon: 'cog',
-          iconClass: 'text-muted-foreground',
-          kindLabel: 'Transaction',
-          title: 'Dispute Result',
-          chips: [
-            { text: 'Dispute Result', style: 'action' },
-            { text: 'updates Match: Status', style: 'code' },
-          ],
-          steps: [
+          key: 'LeaderboardEntry.playerNickname',
+          lines: [
             {
-              head: 'requires',
+              head: '',
               operator: false,
               parts: [
-                { text: 'Status', name: true },
-                { text: ' = Completed · "Only completed matches can be disputed"', name: false },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Status', name: true },
-                { text: ' ← Disputed', name: false },
+                { text: i18n.word('LeaderboardEntry.playerNickname'), name: true },
+                { text: i18n.word("' = '"), name: false },
+                { text: i18n.word('LeaderboardEntry.player'), name: true },
+                { text: i18n.word("' ↳ '"), name: false },
+                { text: i18n.word('Player.nickname'), name: true },
               ],
               level: 0,
             },
           ],
-          prompts: [],
-          emails: [],
+          note: i18n.fill(i18n.chrome.calculationNote, {
+            fields: [
+              `${i18n.word('LeaderboardEntry.player')}${i18n.word("' ↳ '")}${i18n.word('Player.nickname')}`,
+            ].join(', '),
+          }),
+          anchor: '947e44f631',
+          helpers: [],
         },
       ],
-    ],
-  },
-  {
-    title: 'Cancel Match',
-    threads: [
-      [
+    },
+    {
+      record: 'GameType',
+      name: i18n.word('GameType'),
+      items: [
         {
-          cause: '',
-          icon: 'cog',
-          iconClass: 'text-muted-foreground',
-          kindLabel: 'Transaction',
-          title: 'Cancel Match',
-          chips: [
-            { text: 'Cancel Match', style: 'action' },
-            { text: 'updates Match: Status', style: 'code' },
-          ],
-          steps: [
+          key: 'GameType.displayName',
+          lines: [
             {
-              head: 'requires',
+              head: '',
               operator: false,
               parts: [
-                { text: 'Status', name: true },
-                { text: ' = Scheduled or ', name: false },
-                { text: 'Status', name: true },
-                {
-                  text: ' = In Progress · "Only scheduled or in-progress matches can be cancelled"',
-                  name: false,
-                },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Status', name: true },
-                { text: ' ← Cancelled', name: false },
+                { text: i18n.word('GameType.displayName'), name: true },
+                { text: i18n.word("' = \"\\{'"), name: false },
+                { text: i18n.word('GameType.name'), name: true },
+                { text: i18n.word("'\\} (\\{'"), name: false },
+                { text: i18n.word('GameType.rulesVariant'), name: true },
+                { text: i18n.word("'\\})\"'"), name: false },
               ],
               level: 0,
             },
           ],
-          prompts: [],
-          emails: [],
+          note: i18n.fill(i18n.chrome.calculationNote, {
+            fields: [`${i18n.word('GameType.name')}`, `${i18n.word('GameType.rulesVariant')}`].join(
+              ', '
+            ),
+          }),
+          anchor: '2867822a57',
+          helpers: [],
+        },
+        {
+          key: 'GameType.leaderboard',
+          lines: [
+            {
+              head: '',
+              operator: false,
+              parts: [
+                { text: i18n.word('GameType.leaderboard'), name: true },
+                { text: i18n.word("' = '"), name: false },
+                { text: i18n.word('leaderboards'), name: true },
+                { text: i18n.word("' where '"), name: false },
+                { text: i18n.word('LeaderboardEntry.game'), name: true },
+                { text: i18n.word("' = this game'"), name: false },
+              ],
+              level: 0,
+            },
+          ],
+          note: i18n.fill(i18n.chrome.calculationNote, {
+            fields: [`${i18n.word('leaderboards')}`].join(', '),
+          }),
+          anchor: '32418ad075',
+          helpers: [],
         },
       ],
-    ],
-  },
-  {
-    title: 'Record & Complete Match',
-    threads: [
-      [
+    },
+  ];
+}
+
+function automationFunctions(): FunctionGroup[] {
+  return [
+    {
+      name: 'computeEloDelta',
+      title: `${i18n.word('computeEloDelta')}(${[i18n.word('computeEloDelta.p1Rating'), i18n.word('computeEloDelta.p2Rating'), i18n.word('computeEloDelta.outcome')].join(', ')})`,
+      steps: [
         {
-          cause: '',
-          icon: 'cog',
-          iconClass: 'text-muted-foreground',
-          kindLabel: 'Transaction',
-          title: 'Record & Complete Match',
-          chips: [
-            { text: 'Record & Complete Match', style: 'action' },
-            {
-              text: 'updates Leaderboard Entry: Current Rating · Matches Played · Wins · Losses · Draws · Last Activity',
-              style: 'code',
-            },
-            { text: 'creates Leaderboard Entry', style: 'code' },
-            {
-              text: 'updates Match: Status · Outcome · P1 Score · P2 Score · P1 Rating Change · P2 Rating Change',
-              style: 'code',
-            },
+          head: i18n.word("'sets'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'expected'"), name: true },
+            { text: i18n.word("' ←'"), name: false },
           ],
-          steps: [
-            {
-              head: 'requires',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Status', name: true },
-                { text: ' = Scheduled or ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Status', name: true },
-                {
-                  text: ' = In Progress · "Match must be scheduled or in progress to complete"',
-                  name: false,
-                },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'p1Rating', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Starting Rating (Default 1200)', name: true },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'p2Rating', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Starting Rating (Default 1200)', name: true },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'p1Found', name: true },
-                { text: ' ← no', name: false },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'p2Found', name: true },
-                { text: ' ← no', name: false },
-              ],
-              level: 0,
-            },
-            {
-              head: 'for each',
-              operator: false,
-              parts: [
-                { text: 'entry', name: true },
-                { text: ' of ', name: false },
-                { text: 'Leaderboards', name: true },
-              ],
-              level: 0,
-            },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Game', name: true },
-                { text: ' = ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ' and ', name: false },
-                { text: 'Player', name: true },
-                { text: ' = ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Player 1', name: true },
-              ],
-              level: 1,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'p1Rating', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Current Rating', name: true },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'p1Found', name: true },
-                { text: ' ← yes', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Game', name: true },
-                { text: ' = ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ' and ', name: false },
-                { text: 'Player', name: true },
-                { text: ' = ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Player 2', name: true },
-              ],
-              level: 1,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'p2Rating', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Current Rating', name: true },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'p2Found', name: true },
-                { text: ' ← yes', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'delta1', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Compute rating change', name: true },
-                { text: '(', name: false },
-                { text: 'p1Rating', name: true },
-                { text: ', ', name: false },
-                { text: 'p2Rating', name: true },
-                { text: ', ', name: false },
-                { text: 'Outcome', name: true },
-                { text: ')', name: false },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'delta2', name: true },
-                { text: ' ← 0 − ', name: false },
-                { text: 'delta1', name: true },
-              ],
-              level: 0,
-            },
-            { head: 'if', operator: false, parts: [{ text: 'p1Found', name: true }], level: 0 },
-            {
-              head: 'for each',
-              operator: false,
-              parts: [
-                { text: 'entry', name: true },
-                { text: ' of ', name: false },
-                { text: 'Leaderboards', name: true },
-              ],
-              level: 1,
-            },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Game', name: true },
-                { text: ' = ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ' and ', name: false },
-                { text: 'Player', name: true },
-                { text: ' = ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Player 1', name: true },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Current Rating', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Current Rating', name: true },
-                { text: ' + ', name: false },
-                { text: 'delta1', name: true },
-              ],
-              level: 3,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Matches Played', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Matches Played', name: true },
-                { text: ' + 1', name: false },
-              ],
-              level: 3,
-            },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Outcome', name: true },
-                { text: ' = Player 1 Victory', name: false },
-              ],
-              level: 3,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Wins', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Wins', name: true },
-                { text: ' + 1', name: false },
-              ],
-              level: 4,
-            },
-            { head: 'otherwise', operator: false, parts: [], level: 3 },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Outcome', name: true },
-                { text: ' = Player 2 Victory', name: false },
-              ],
-              level: 4,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Losses', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Losses', name: true },
-                { text: ' + 1', name: false },
-              ],
-              level: 5,
-            },
-            { head: 'otherwise', operator: false, parts: [], level: 4 },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Draws', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Draws', name: true },
-                { text: ' + 1', name: false },
-              ],
-              level: 5,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Last Activity', name: true },
-                { text: ' ← now', name: false },
-              ],
-              level: 3,
-            },
-            { head: 'otherwise', operator: false, parts: [], level: 0 },
-            {
-              head: 'adds',
-              operator: false,
-              parts: [
-                { text: 'Leaderboard Entry', name: true },
-                { text: ' (', name: false },
-              ],
-              level: 1,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Player', name: true },
-                { text: ': ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Player 1', name: true },
-                { text: ',', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Game', name: true },
-                { text: ': ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ',', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Current Rating', name: true },
-                { text: ': ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Starting Rating (Default 1200)', name: true },
-                { text: ' + ', name: false },
-                { text: 'delta1', name: true },
-                { text: ',', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Matches Played', name: true },
-                { text: ': 1,', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Wins', name: true },
-                { text: ': if ', name: false },
-                { text: 'Outcome', name: true },
-                { text: ' = Player 1 Victory then 1 otherwise 0,', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Losses', name: true },
-                { text: ': if ', name: false },
-                { text: 'Outcome', name: true },
-                { text: ' = Player 2 Victory then 1 otherwise 0,', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Draws', name: true },
-                { text: ': if ', name: false },
-                { text: 'Outcome', name: true },
-                { text: ' = Draw then 1 otherwise 0,', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Last Activity', name: true },
-                { text: ': now)', name: false },
-              ],
-              level: 2,
-            },
-            { head: 'if', operator: false, parts: [{ text: 'p2Found', name: true }], level: 0 },
-            {
-              head: 'for each',
-              operator: false,
-              parts: [
-                { text: 'entry', name: true },
-                { text: ' of ', name: false },
-                { text: 'Leaderboards', name: true },
-              ],
-              level: 1,
-            },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Game', name: true },
-                { text: ' = ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ' and ', name: false },
-                { text: 'Player', name: true },
-                { text: ' = ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Player 2', name: true },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Current Rating', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Current Rating', name: true },
-                { text: ' + ', name: false },
-                { text: 'delta2', name: true },
-              ],
-              level: 3,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Matches Played', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Matches Played', name: true },
-                { text: ' + 1', name: false },
-              ],
-              level: 3,
-            },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Outcome', name: true },
-                { text: ' = Player 2 Victory', name: false },
-              ],
-              level: 3,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Wins', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Wins', name: true },
-                { text: ' + 1', name: false },
-              ],
-              level: 4,
-            },
-            { head: 'otherwise', operator: false, parts: [], level: 3 },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Outcome', name: true },
-                { text: ' = Player 1 Victory', name: false },
-              ],
-              level: 4,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Losses', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Losses', name: true },
-                { text: ' + 1', name: false },
-              ],
-              level: 5,
-            },
-            { head: 'otherwise', operator: false, parts: [], level: 4 },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Draws', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Draws', name: true },
-                { text: ' + 1', name: false },
-              ],
-              level: 5,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Last Activity', name: true },
-                { text: ' ← now', name: false },
-              ],
-              level: 3,
-            },
-            { head: 'otherwise', operator: false, parts: [], level: 0 },
-            {
-              head: 'adds',
-              operator: false,
-              parts: [
-                { text: 'Leaderboard Entry', name: true },
-                { text: ' (', name: false },
-              ],
-              level: 1,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Player', name: true },
-                { text: ': ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Player 2', name: true },
-                { text: ',', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Game', name: true },
-                { text: ': ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ',', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Current Rating', name: true },
-                { text: ': ', name: false },
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Game', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Starting Rating (Default 1200)', name: true },
-                { text: ' + ', name: false },
-                { text: 'delta2', name: true },
-                { text: ',', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Matches Played', name: true },
-                { text: ': 1,', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Wins', name: true },
-                { text: ': if ', name: false },
-                { text: 'Outcome', name: true },
-                { text: ' = Player 2 Victory then 1 otherwise 0,', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Losses', name: true },
-                { text: ': if ', name: false },
-                { text: 'Outcome', name: true },
-                { text: ' = Player 1 Victory then 1 otherwise 0,', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Draws', name: true },
-                { text: ': if ', name: false },
-                { text: 'Outcome', name: true },
-                { text: ' = Draw then 1 otherwise 0,', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: '',
-              operator: false,
-              parts: [
-                { text: 'Last Activity', name: true },
-                { text: ': now)', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Status', name: true },
-                { text: ' ← Completed', name: false },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'Outcome', name: true },
-                { text: ' ← ', name: false },
-                { text: 'Outcome', name: true },
-              ],
-              level: 0,
-            },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Outcome', name: true },
-                { text: ' = Player 1 Victory', name: false },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'P1 Score', name: true },
-                { text: ' ← 1', name: false },
-              ],
-              level: 1,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'P2 Score', name: true },
-                { text: ' ← −1', name: false },
-              ],
-              level: 1,
-            },
-            { head: 'otherwise', operator: false, parts: [], level: 0 },
-            {
-              head: 'if',
-              operator: false,
-              parts: [
-                { text: 'Outcome', name: true },
-                { text: ' = Player 2 Victory', name: false },
-              ],
-              level: 1,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'P1 Score', name: true },
-                { text: ' ← −1', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'P2 Score', name: true },
-                { text: ' ← 1', name: false },
-              ],
-              level: 2,
-            },
-            { head: 'otherwise', operator: false, parts: [], level: 1 },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'P1 Score', name: true },
-                { text: ' ← 0.5', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'P2 Score', name: true },
-                { text: ' ← 0.5', name: false },
-              ],
-              level: 2,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'P1 Rating Change', name: true },
-                { text: ' ← ', name: false },
-                { text: 'delta1', name: true },
-              ],
-              level: 0,
-            },
-            {
-              head: 'sets',
-              operator: false,
-              parts: [
-                { text: 'Match', name: true },
-                { text: ' ↳ ', name: false },
-                { text: 'P2 Rating Change', name: true },
-                { text: ' ← ', name: false },
-                { text: 'delta2', name: true },
-              ],
-              level: 0,
-            },
+          level: 0,
+        },
+        {
+          head: '',
+          operator: false,
+          parts: [
+            { text: i18n.word("'500 + ((('"), name: false },
+            { text: i18n.word('computeEloDelta.p1Rating'), name: true },
+            { text: i18n.word("' − '"), name: false },
+            { text: i18n.word('computeEloDelta.p2Rating'), name: true },
+            { text: i18n.word("') × 5 ÷ 4) without decimals)'"), name: false },
           ],
-          prompts: [],
-          emails: [],
+          level: 1,
+        },
+        {
+          head: i18n.word("'if'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'expected'"), name: true },
+            { text: i18n.word("' > 900'"), name: false },
+          ],
+          level: 0,
+        },
+        {
+          head: i18n.word("'sets'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'expected'"), name: true },
+            { text: i18n.word("' ← 900'"), name: false },
+          ],
+          level: 1,
+        },
+        { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 0 },
+        {
+          head: i18n.word("'if'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'expected'"), name: true },
+            { text: i18n.word("' < 100'"), name: false },
+          ],
+          level: 1,
+        },
+        {
+          head: i18n.word("'sets'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'expected'"), name: true },
+            { text: i18n.word("' ← 100'"), name: false },
+          ],
+          level: 2,
+        },
+        {
+          head: i18n.word("'sets'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'actual'"), name: true },
+            { text: i18n.word("' ← 500'"), name: false },
+          ],
+          level: 0,
+        },
+        {
+          head: i18n.word("'if'"),
+          operator: false,
+          parts: [
+            { text: i18n.word('computeEloDelta.outcome'), name: true },
+            { text: i18n.word("' = '"), name: false },
+            { text: i18n.word('MatchOutcome.playerOneWin'), name: true },
+          ],
+          level: 0,
+        },
+        {
+          head: i18n.word("'sets'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'actual'"), name: true },
+            { text: i18n.word("' ← 1000'"), name: false },
+          ],
+          level: 1,
+        },
+        { head: i18n.word("'otherwise'"), operator: false, parts: [], level: 0 },
+        {
+          head: i18n.word("'if'"),
+          operator: false,
+          parts: [
+            { text: i18n.word('computeEloDelta.outcome'), name: true },
+            { text: i18n.word("' = '"), name: false },
+            { text: i18n.word('MatchOutcome.playerTwoWin'), name: true },
+          ],
+          level: 1,
+        },
+        {
+          head: i18n.word("'sets'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'actual'"), name: true },
+            { text: i18n.word("' ← 0'"), name: false },
+          ],
+          level: 2,
+        },
+        {
+          head: i18n.word("'returns'"),
+          operator: false,
+          parts: [
+            { text: i18n.word("'(32 × ('"), name: false },
+            { text: i18n.word("'actual'"), name: true },
+            { text: i18n.word("' − '"), name: false },
+            { text: i18n.word("'expected'"), name: true },
+            { text: i18n.word("') ÷ 1000) without decimals'"), name: false },
+          ],
+          level: 0,
         },
       ],
-    ],
-  },
-];
-const CALCULATIONS: CalculationGroup[] = [
-  {
-    record: 'Match',
-    items: [
-      {
-        key: 'Match.title',
-        lines: [
-          {
-            head: '',
-            operator: false,
-            parts: [
-              { text: 'Match Matchup', name: true },
-              { text: ' =', name: false },
-            ],
-            level: 0,
-          },
-          {
-            head: '',
-            operator: false,
-            parts: [
-              { text: '"{', name: false },
-              { text: 'Game', name: true },
-              { text: ' ↳ ', name: false },
-              { text: 'Display Name', name: true },
-              { text: '}: {', name: false },
-              { text: 'Player 1', name: true },
-              { text: ' ↳ ', name: false },
-              { text: 'Nickname / Handle', name: true },
-              { text: '} vs {', name: false },
-              { text: 'Player 2', name: true },
-              { text: ' ↳ ', name: false },
-              { text: 'Nickname / Handle', name: true },
-              { text: '}"', name: false },
-            ],
-            level: 1,
-          },
-        ],
-        note: 'Recalculated from Game ↳ Display Name, Player 1 ↳ Nickname / Handle, Player 2 ↳ Nickname / Handle. Cannot be typed in.',
-        anchor: '0f04ccc836',
-        helpers: [],
-      },
-      {
-        key: 'Match.gameDisplayName',
-        lines: [
-          {
-            head: '',
-            operator: false,
-            parts: [
-              { text: 'Game Display Name', name: true },
-              { text: ' = ', name: false },
-              { text: 'Game', name: true },
-              { text: ' ↳ ', name: false },
-              { text: 'Display Name', name: true },
-            ],
-            level: 0,
-          },
-        ],
-        note: 'Recalculated from Game ↳ Display Name. Cannot be typed in.',
-        anchor: 'f073c574c2',
-        helpers: [],
-      },
-    ],
-  },
-  {
-    record: 'Leaderboard Entry',
-    items: [
-      {
-        key: 'LeaderboardEntry.playerNickname',
-        lines: [
-          {
-            head: '',
-            operator: false,
-            parts: [
-              { text: 'Player Nickname', name: true },
-              { text: ' = ', name: false },
-              { text: 'Player', name: true },
-              { text: ' ↳ ', name: false },
-              { text: 'Nickname / Handle', name: true },
-            ],
-            level: 0,
-          },
-        ],
-        note: 'Recalculated from Player ↳ Nickname / Handle. Cannot be typed in.',
-        anchor: '947e44f631',
-        helpers: [],
-      },
-    ],
-  },
-  {
-    record: 'Game',
-    items: [
-      {
-        key: 'GameType.displayName',
-        lines: [
-          {
-            head: '',
-            operator: false,
-            parts: [
-              { text: 'Display Name', name: true },
-              { text: ' = "{', name: false },
-              { text: 'Game Name', name: true },
-              { text: '} ({', name: false },
-              { text: 'Variant / Ruleset', name: true },
-              { text: '})"', name: false },
-            ],
-            level: 0,
-          },
-        ],
-        note: 'Recalculated from Game Name, Variant / Ruleset. Cannot be typed in.',
-        anchor: '2867822a57',
-        helpers: [],
-      },
-      {
-        key: 'GameType.leaderboard',
-        lines: [
-          {
-            head: '',
-            operator: false,
-            parts: [
-              { text: 'Game Leaderboard', name: true },
-              { text: ' = ', name: false },
-              { text: 'Leaderboards', name: true },
-              { text: ' where ', name: false },
-              { text: 'Game', name: true },
-              { text: ' = this game', name: false },
-            ],
-            level: 0,
-          },
-        ],
-        note: 'Recalculated from Leaderboards. Cannot be typed in.',
-        anchor: '32418ad075',
-        helpers: [],
-      },
-    ],
-  },
-];
-const FUNCTIONS: FunctionGroup[] = [
-  {
-    title: 'Compute rating change(Player 1 rating, Player 2 rating, Outcome)',
-    steps: [
-      {
-        head: 'sets',
-        operator: false,
-        parts: [
-          { text: 'expected', name: true },
-          { text: ' ←', name: false },
-        ],
-        level: 0,
-      },
-      {
-        head: '',
-        operator: false,
-        parts: [
-          { text: '500 + (((', name: false },
-          { text: 'Player 1 rating', name: true },
-          { text: ' − ', name: false },
-          { text: 'Player 2 rating', name: true },
-          { text: ') × 5 ÷ 4) without decimals)', name: false },
-        ],
-        level: 1,
-      },
-      {
-        head: 'if',
-        operator: false,
-        parts: [
-          { text: 'expected', name: true },
-          { text: ' > 900', name: false },
-        ],
-        level: 0,
-      },
-      {
-        head: 'sets',
-        operator: false,
-        parts: [
-          { text: 'expected', name: true },
-          { text: ' ← 900', name: false },
-        ],
-        level: 1,
-      },
-      { head: 'otherwise', operator: false, parts: [], level: 0 },
-      {
-        head: 'if',
-        operator: false,
-        parts: [
-          { text: 'expected', name: true },
-          { text: ' < 100', name: false },
-        ],
-        level: 1,
-      },
-      {
-        head: 'sets',
-        operator: false,
-        parts: [
-          { text: 'expected', name: true },
-          { text: ' ← 100', name: false },
-        ],
-        level: 2,
-      },
-      {
-        head: 'sets',
-        operator: false,
-        parts: [
-          { text: 'actual', name: true },
-          { text: ' ← 500', name: false },
-        ],
-        level: 0,
-      },
-      {
-        head: 'if',
-        operator: false,
-        parts: [
-          { text: 'Outcome', name: true },
-          { text: ' = Player 1 Victory', name: false },
-        ],
-        level: 0,
-      },
-      {
-        head: 'sets',
-        operator: false,
-        parts: [
-          { text: 'actual', name: true },
-          { text: ' ← 1000', name: false },
-        ],
-        level: 1,
-      },
-      { head: 'otherwise', operator: false, parts: [], level: 0 },
-      {
-        head: 'if',
-        operator: false,
-        parts: [
-          { text: 'Outcome', name: true },
-          { text: ' = Player 2 Victory', name: false },
-        ],
-        level: 1,
-      },
-      {
-        head: 'sets',
-        operator: false,
-        parts: [
-          { text: 'actual', name: true },
-          { text: ' ← 0', name: false },
-        ],
-        level: 2,
-      },
-      {
-        head: 'returns',
-        operator: false,
-        parts: [
-          { text: '(32 × (', name: false },
-          { text: 'actual', name: true },
-          { text: ' − ', name: false },
-          { text: 'expected', name: true },
-          { text: ') ÷ 1000) without decimals', name: false },
-        ],
-        level: 0,
-      },
-    ],
-  },
-];
+    },
+  ];
+}
 
 const ICONS: Record<string, typeof Cog> = {
   cog: Cog,
@@ -1265,14 +1363,11 @@ function StepNode({ step }: { step: ChainStep }): JSX.Element {
 function CalculationsSection(): JSX.Element {
   return (
     <section>
-      <p className="text-xs text-muted-foreground">
-        These values are never typed in. The software recalculates them whenever the values they
-        depend on change.
-      </p>
+      <p className="text-xs text-muted-foreground">{i18n.chrome.calculationsHint}</p>
       <div className="mt-3 grid gap-4">
-        {CALCULATIONS.map((group) => (
+        {automationCalculations().map((group) => (
           <div key={group.record} className="rounded-md border border-border bg-muted px-4 py-3">
-            <p className="text-xs font-semibold">{group.record}</p>
+            <p className="text-xs font-semibold">{group.name}</p>
             <div className="mt-1 divide-y divide-border">
               {group.items.map((item) => (
                 <div
@@ -1286,8 +1381,8 @@ function CalculationsSection(): JSX.Element {
             </div>
           </div>
         ))}
-        {FUNCTIONS.map((group) => (
-          <div key={group.title} className="rounded-md border border-border bg-muted px-4 py-3">
+        {automationFunctions().map((group) => (
+          <div key={group.name} className="rounded-md border border-border bg-muted px-4 py-3">
             <p className="text-xs font-semibold">{group.title}</p>
             <div className="mt-1 py-2.5 text-sm leading-relaxed">
               <FormulaLines lines={group.steps} />
@@ -1301,34 +1396,32 @@ function CalculationsSection(): JSX.Element {
 
 export function AutomationManagement(): JSX.Element {
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="w-full min-w-0 p-6 max-w-5xl mx-auto">
       <h1 className="text-2xl font-semibold flex items-center gap-2" data-ls="259002a93f">
         <Workflow className="h-6 w-6" />
-        Automations
+        {i18n.chrome.automationTitle}
       </h1>
-      <p className="text-muted-foreground mb-6">
-        What the software calculates, what starts each process, and what it changes
-      </p>
+      <p className="text-muted-foreground mb-6">{i18n.chrome.automationSubtitle}</p>
       <Tabs.Root defaultValue="processes">
-        <Tabs.List className="flex gap-1 border-b border-border">
+        <Tabs.List className="flex gap-1 overflow-x-auto border-b border-border">
           <Tabs.Trigger
             value="processes"
             className="px-3 py-2 text-sm font-medium text-muted-foreground aria-selected:border-b-2 aria-selected:border-primary aria-selected:text-foreground"
             data-ls="fb0ef85c16"
           >
-            Processes
+            {i18n.chrome.processesTitle}
           </Tabs.Trigger>
           <Tabs.Trigger
             value="calculations"
             className="px-3 py-2 text-sm font-medium text-muted-foreground aria-selected:border-b-2 aria-selected:border-primary aria-selected:text-foreground"
             data-ls="f9e91e1255"
           >
-            Calculations
+            {i18n.chrome.calculationsTitle}
           </Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content value="processes" className="pt-3">
           <div className="grid gap-4">
-            {CHAINS.map((chain, chainIndex) => (
+            {automationChains().map((chain, chainIndex) => (
               <div key={chainIndex} className="rounded-lg border border-border bg-card p-4">
                 <p className="font-medium">{chain.title}</p>
                 {chain.threads.map((thread, threadIndex) => (

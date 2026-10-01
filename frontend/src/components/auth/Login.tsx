@@ -1,8 +1,10 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState, useRef } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { authClient } from '../../api/authClient.js';
+import { navigateToPath, returnAfterSignIn } from '../../utils/recordNavigation.js';
 import { startSocialSignIn } from '../../api/socialSignIn.js';
 import { useSetupStatus } from '../../api/setupStatus.js';
 import {
@@ -22,11 +24,11 @@ function providerTitle(providers: string[], provider: string, label: string): st
   if (providers.includes(provider)) {
     return label;
   }
-  return `${label}: Not configured`;
+  return `${label}: ${i18n.chrome.socialProviderNotConfigured}`;
 }
 
 export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
-  const { signIn, verifyTwoFactor } = useAuth();
+  const { signIn, verifyTwoFactor, verifyBackupCode } = useAuth();
   const setupStatus = useSetupStatus();
   const [email, setEmail] = useState('');
   const passwordRef = useRef('');
@@ -35,6 +37,7 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [usesBackupCode, setUsesBackupCode] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
 
@@ -69,11 +72,11 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
         setRequiresTwoFactor(true);
         setIsLoading(false);
       } else {
-        window.location.href = '/app';
+        window.location.href = returnAfterSignIn();
       }
     } catch (err) {
       resetPasswordFields();
-      setError(getErrorMessage(err, 'Authentication failed'));
+      setError(getErrorMessage(err, i18n.chrome.authenticationFailed));
       setIsLoading(false);
     }
   };
@@ -83,11 +86,11 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
     setIsLoading(true);
 
     try {
-      await verifyTwoFactor(value);
+      await (usesBackupCode ? verifyBackupCode(value) : verifyTwoFactor(value));
       setTwoFactorCode('');
-      window.location.href = '/app';
+      window.location.href = returnAfterSignIn();
     } catch (err) {
-      setError(getErrorMessage(err, 'Invalid verification code'));
+      setError(getErrorMessage(err, i18n.chrome.invalidVerificationCode));
       setIsLoading(false);
     }
   };
@@ -108,19 +111,17 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
 
       if (result.error) {
         if (isCancelledAuthError(result.error)) {
-          setError('Passkey authentication was cancelled.');
+          setError(i18n.chrome.passkeyCancelled);
         } else {
-          setError(authErrorMessage(result.error, 'Passkey authentication failed'));
+          setError(authErrorMessage(result.error, i18n.chrome.passkeyFailed));
         }
         return;
       }
 
-      window.location.href = '/app';
+      window.location.href = returnAfterSignIn();
     } catch (err) {
       setError(
-        isCancelledAuthError(err)
-          ? 'Passkey authentication was cancelled.'
-          : 'Passkey authentication failed'
+        isCancelledAuthError(err) ? i18n.chrome.passkeyCancelled : i18n.chrome.passkeyFailed
       );
     } finally {
       setIsLoading(false);
@@ -147,11 +148,9 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
         {requiresTwoFactor && (
           <div className="flex flex-col gap-2">
             <h2 className="text-xl md:text-2xl font-normal leading-tight text-foreground">
-              Two-factor verification
+              {i18n.chrome.twoFactorVerification}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              {'Enter the 6‑digit code from your authenticator.'}
-            </p>
+            <p className="text-sm text-muted-foreground">{i18n.chrome.twoFactorSubtitle}</p>
           </div>
         )}
 
@@ -164,7 +163,7 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
           >
             <div className="flex flex-col gap-2">
               <label htmlFor="email" className="text-sm font-medium text-foreground">
-                Email
+                {i18n.chrome.emailLabel}
               </label>
               <Input
                 id="email"
@@ -182,7 +181,7 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
 
             <div className="flex flex-col gap-2">
               <label htmlFor="password" className="text-sm font-medium text-foreground">
-                Password
+                {i18n.chrome.passwordLabel}
               </label>
               <div className="relative">
                 <Input
@@ -206,7 +205,7 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
                   }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   tabIndex={-1}
-                  aria-label={showPassword ? 'Hide' : 'Show'}
+                  aria-label={showPassword ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -225,40 +224,44 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
               className="bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-primary"
               size="lg"
             >
-              {isLoading ? 'Signing in…' : 'Sign in'}
+              {isLoading ? i18n.chrome.signingIn : i18n.chrome.signIn}
             </Button>
 
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = '/forgot-password';
-              }}
-              disabled={isLoading}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors text-center disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Forgot password?
-            </button>
+            {setupStatus.capabilities.passwordReset && (
+              <button
+                type="button"
+                onClick={() => {
+                  navigateToPath('/forgot-password');
+                }}
+                disabled={isLoading}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors text-center disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {i18n.chrome.forgotPasswordLink}
+              </button>
+            )}
 
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-4">
                 <div className="flex-1 border-t border-border" />
-                <span className="text-sm text-muted-foreground">Or continue with</span>
+                <span className="text-sm text-muted-foreground">{i18n.chrome.orContinueWith}</span>
                 <div className="flex-1 border-t border-border" />
               </div>
 
               <div className="flex flex-col gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    handlePasskeySignIn().catch(console.error);
-                  }}
-                  disabled={isLoading}
-                  className="bg-secondary text-foreground hover:opacity-90 focus-visible:outline-primary"
-                  size="lg"
-                >
-                  Sign in with passkey
-                </Button>
+                {setupStatus.capabilities.passkeys && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      handlePasskeySignIn().catch(console.error);
+                    }}
+                    disabled={isLoading}
+                    className="bg-secondary text-foreground hover:opacity-90 focus-visible:outline-primary"
+                    size="lg"
+                  >
+                    {i18n.chrome.signInWithPasskey}
+                  </Button>
+                )}
 
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button
@@ -292,30 +295,7 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
                     <span className="truncate">Google</span>
                     {!setupStatus.socialProviders.includes('google') && (
                       <span className="absolute -top-2 right-2 rounded-full border border-border bg-background px-1.5 text-[9px] font-bold uppercase tracking-wider leading-relaxed text-muted-foreground">
-                        Not configured
-                      </span>
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      startSocialSignIn('apple');
-                    }}
-                    disabled={isLoading || !setupStatus.socialProviders.includes('apple')}
-                    title={providerTitle(setupStatus.socialProviders, 'apple', 'Apple')}
-                    className="relative flex-1 min-w-0 inline-flex items-center justify-center gap-2 bg-secondary text-foreground hover:opacity-90 focus-visible:outline-primary disabled:cursor-not-allowed [&:disabled>svg]:grayscale [&:disabled>svg]:opacity-50"
-                  >
-                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                      <path
-                        fill="currentColor"
-                        d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"
-                      />
-                    </svg>
-                    <span className="truncate">Apple</span>
-                    {!setupStatus.socialProviders.includes('apple') && (
-                      <span className="absolute -top-2 right-2 rounded-full border border-border bg-background px-1.5 text-[9px] font-bold uppercase tracking-wider leading-relaxed text-muted-foreground">
-                        Not configured
+                        {i18n.chrome.socialProviderNotConfigured}
                       </span>
                     )}
                   </Button>
@@ -338,7 +318,7 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
                     <span className="truncate">Microsoft</span>
                     {!setupStatus.socialProviders.includes('microsoft') && (
                       <span className="absolute -top-2 right-2 rounded-full border border-border bg-background px-1.5 text-[9px] font-bold uppercase tracking-wider leading-relaxed text-muted-foreground">
-                        Not configured
+                        {i18n.chrome.socialProviderNotConfigured}
                       </span>
                     )}
                   </Button>
@@ -353,7 +333,7 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
               disabled={isLoading}
               className="text-foreground hover:opacity-80 focus-visible:outline-primary"
             >
-              {"Don't have an account? Sign up"}
+              {i18n.chrome.noAccountSignUp}
             </Button>
           </form>
         ) : (
@@ -363,32 +343,55 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
             }}
             className="flex flex-col gap-5"
           >
-            <div className="flex flex-col gap-2">
-              <label htmlFor="twoFactorCode" className="text-sm font-medium text-foreground">
-                Verification Code
-              </label>
-              <Input
-                id="twoFactorCode"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]{6}"
-                value={twoFactorCode}
-                onChange={(e) => {
-                  const numericOnly = e.target.value.replace(/\D/g, '').slice(0, 6);
-                  setTwoFactorCode(numericOnly);
-                  if (numericOnly.length === 6 && !isLoading) {
-                    submitTwoFactorCode(numericOnly).catch(console.error);
-                  }
-                }}
-                placeholder="000000"
-                maxLength={6}
-                required
-                disabled={isLoading}
-                autoFocus
-                autoComplete="one-time-code"
-                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-            </div>
+            {usesBackupCode ? (
+              <div className="flex flex-col gap-2">
+                <label htmlFor="backupCode" className="text-sm font-medium text-foreground">
+                  {i18n.chrome.backupCodeLabel}
+                </label>
+                <Input
+                  id="backupCode"
+                  type="text"
+                  value={twoFactorCode}
+                  onChange={(e) => {
+                    setTwoFactorCode(e.target.value.toUpperCase().slice(0, 11));
+                  }}
+                  placeholder="XXXXX-XXXXX"
+                  maxLength={11}
+                  required
+                  disabled={isLoading}
+                  autoFocus
+                  autoComplete="off"
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm font-mono text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <label htmlFor="twoFactorCode" className="text-sm font-medium text-foreground">
+                  {i18n.chrome.verificationCodeLabel}
+                </label>
+                <Input
+                  id="twoFactorCode"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  value={twoFactorCode}
+                  onChange={(e) => {
+                    const numericOnly = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setTwoFactorCode(numericOnly);
+                    if (numericOnly.length === 6 && !isLoading) {
+                      submitTwoFactorCode(numericOnly).catch(console.error);
+                    }
+                  }}
+                  placeholder="000000"
+                  maxLength={6}
+                  required
+                  disabled={isLoading}
+                  autoFocus
+                  autoComplete="one-time-code"
+                  className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+            )}
 
             {error && (
               <div className="rounded-lg border border-border bg-secondary p-3 text-sm text-foreground">
@@ -402,14 +405,28 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
               className="bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-primary"
               size="lg"
             >
-              {isLoading ? 'Verifying…' : 'Verify'}
+              {isLoading ? i18n.chrome.verifying : i18n.chrome.verify}
             </Button>
 
             <div className="flex flex-col gap-2">
               <Button
                 type="button"
+                variant="ghost"
+                onClick={() => {
+                  setUsesBackupCode(!usesBackupCode);
+                  setTwoFactorCode('');
+                  setError(null);
+                }}
+                disabled={isLoading}
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                {usesBackupCode ? i18n.chrome.useAuthenticatorCode : i18n.chrome.useBackupCode}
+              </Button>
+              <Button
+                type="button"
                 onClick={() => {
                   setRequiresTwoFactor(false);
+                  setUsesBackupCode(false);
                   setTwoFactorCode('');
                   setError(null);
                   resetPasswordFields();
@@ -417,7 +434,7 @@ export function Login({ onSwitchToRegister }: LoginProperties): JSX.Element {
                 disabled={isLoading}
                 className="h-10 rounded-lg bg-transparent px-6 text-sm font-medium text-foreground hover:bg-secondary hover:text-secondary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Back to sign in
+                {i18n.chrome.backToSignIn}
               </Button>
             </div>
           </form>

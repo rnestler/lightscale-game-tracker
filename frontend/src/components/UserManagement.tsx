@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { apiBaseUrl } from '../config/apiConfig';
@@ -28,12 +29,12 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-const ROLE_LABELS: Record<string, string | undefined> = {
-  guest: 'Guest',
-  unassigned: 'Unassigned',
-  admin: 'Admin',
-  player: 'Player',
-  scorekeeper: 'Scorekeeper',
+const ROLE_LABELS: Record<string, (() => string) | undefined> = {
+  guest: (): string => i18n.chrome.guest,
+  unassigned: (): string => i18n.chrome.unassigned,
+  admin: (): string => i18n.chrome.admin,
+  player: (): string => i18n.word('role.player'),
+  scorekeeper: (): string => i18n.word('role.scorekeeper'),
 };
 
 interface User {
@@ -65,7 +66,7 @@ export function UserManagement(): JSX.Element {
   const [roles, setRoles] = useState<Role[]>([]);
   const roleDisplay = (roleId: string): string => {
     const name = roles.find((role) => role.id === roleId)?.name ?? roleId;
-    return ROLE_LABELS[name] ?? name;
+    return ROLE_LABELS[name]?.() ?? name;
   };
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -81,12 +82,12 @@ export function UserManagement(): JSX.Element {
         credentials: 'include',
       });
       if (!response.ok) {
-        throw new Error('Failed to fetch users');
+        throw new Error(i18n.chrome.failedToFetchUsers);
       }
       const data = (await response.json()) as { users: User[] };
       setUsers(data.users);
     } catch (error) {
-      setErrorMessage('Failed to fetch users');
+      setErrorMessage(i18n.chrome.failedToFetchUsers);
       console.error('Failed to fetch users:', error);
     }
   };
@@ -97,7 +98,7 @@ export function UserManagement(): JSX.Element {
         credentials: 'include',
       });
       if (!response.ok) {
-        throw new Error('Roles could not be loaded.');
+        throw new Error(i18n.chrome.errorLoadRolesFailed);
       }
       const data = (await response.json()) as { roles: Role[] };
       const uniqueRoles = Array.from(new Map(data.roles.map((role) => [role.id, role])).values());
@@ -136,14 +137,14 @@ export function UserManagement(): JSX.Element {
         body: JSON.stringify({ email, roleId: inviteRoleId }),
       });
       if (!response.ok) {
-        setErrorMessage(await apiErrorMessage(response, 'Failed to send invitation.'));
+        setErrorMessage(await apiErrorMessage(response, i18n.chrome.inviteFailed));
         return;
       }
       setInviteEmail('');
       setInviteRoleId('');
       await fetchInvitations();
     } catch (error) {
-      setErrorMessage('Failed to send invitation.');
+      setErrorMessage(i18n.chrome.inviteFailed);
       console.error('Failed to send invitation:', error);
     } finally {
       setIsInviting(false);
@@ -172,7 +173,7 @@ export function UserManagement(): JSX.Element {
         credentials: 'include',
       });
       if (response.ok) {
-        setErrorMessage('Invitation resent.');
+        setErrorMessage(i18n.chrome.invitationResent);
       }
     } catch (error) {
       console.error('Failed to resend invitation:', error);
@@ -186,11 +187,11 @@ export function UserManagement(): JSX.Element {
         credentials: 'include',
       });
       if (!response.ok) {
-        throw new Error('Failed to assign role');
+        throw new Error(i18n.chrome.failedToAssignRole);
       }
       await fetchUsers();
     } catch (error) {
-      setErrorMessage('Failed to assign role');
+      setErrorMessage(i18n.chrome.failedToAssignRole);
       console.error('Failed to assign role:', error);
     }
   };
@@ -202,12 +203,12 @@ export function UserManagement(): JSX.Element {
         credentials: 'include',
       });
       if (!response.ok) {
-        setErrorMessage(await apiErrorMessage(response, 'Failed to remove role'));
+        setErrorMessage(await apiErrorMessage(response, i18n.chrome.failedToRemoveRole));
         return;
       }
       await fetchUsers();
     } catch (error) {
-      setErrorMessage('Failed to remove role');
+      setErrorMessage(i18n.chrome.failedToRemoveRole);
       console.error('Failed to remove role:', error);
     }
   };
@@ -219,11 +220,11 @@ export function UserManagement(): JSX.Element {
         credentials: 'include',
       });
       if (!response.ok) {
-        throw new Error('Failed to delete user');
+        throw new Error(i18n.chrome.failedToDeleteUser);
       }
       await fetchUsers();
     } catch (error) {
-      setErrorMessage('Failed to delete user');
+      setErrorMessage(i18n.chrome.failedToDeleteUser);
       console.error('Failed to delete user:', error);
     }
   };
@@ -248,7 +249,7 @@ export function UserManagement(): JSX.Element {
       <div className="flex items-start justify-center h-96">
         <div
           role="status"
-          aria-label={'Loading…'}
+          aria-label={i18n.chrome.loading}
           className="rounded-xl border border-border bg-card w-full max-w-2xl p-6 space-y-3"
         >
           <Skeleton className="h-5 w-1/3" />
@@ -260,12 +261,12 @@ export function UserManagement(): JSX.Element {
   }
 
   return (
-    <div className="px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 lg:py-8 xl:py-10 max-w-7xl mx-auto">
+    <div className="w-full min-w-0 px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 lg:py-8 xl:py-10 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl lg:text-3xl font-bold mb-2" data-ls="375704d2ef">
-          User Management
+        <h1 className="text-2xl lg:text-3xl font-bold mb-2 break-words" data-ls="375704d2ef">
+          {i18n.chrome.userManagementTitle}
         </h1>
-        <p className="text-muted-foreground">Manage users and their roles</p>
+        <p className="text-muted-foreground">{i18n.chrome.userManagementSubtitle}</p>
       </div>
 
       {errorMessage && (
@@ -277,11 +278,9 @@ export function UserManagement(): JSX.Element {
       <div className="mb-6 bg-card border border-border rounded-lg p-6">
         <div className="flex items-center gap-2 mb-1">
           <Mail className="h-5 w-5 text-muted-foreground" />
-          <h3 className="text-base font-semibold">Invite user</h3>
+          <h3 className="text-base font-semibold">{i18n.chrome.inviteUserTitle}</h3>
         </div>
-        <p className="text-sm text-muted-foreground mb-4">
-          Send an email invitation and optionally pre-assign a role.
-        </p>
+        <p className="text-sm text-muted-foreground mb-4">{i18n.chrome.inviteUserDescription}</p>
         <div className="flex flex-col sm:flex-row gap-3">
           <input
             type="email"
@@ -289,24 +288,24 @@ export function UserManagement(): JSX.Element {
             onChange={(e) => {
               setInviteEmail(e.target.value);
             }}
-            placeholder="name@example.com"
-            aria-label="Invite user"
-            className="w-full sm:flex-1 h-10 rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+            placeholder={i18n.chrome.inviteEmailPlaceholder}
+            aria-label={i18n.chrome.inviteUserTitle}
+            className="w-full min-w-0 sm:flex-1 h-10 rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
           />
           <select
             value={inviteRoleId}
             onChange={(e) => {
               setInviteRoleId(e.target.value);
             }}
-            aria-label="Role"
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+            aria-label={i18n.chrome.inviteRoleLabel}
+            className="h-10 min-w-0 rounded-md border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
           >
-            <option value="">No role (awaiting approval)</option>
+            <option value="">{i18n.chrome.inviteNoRoleOption}</option>
             {roles
               .filter((role) => role.name !== 'guest' && role.name !== 'unassigned')
               .map((role) => (
                 <option key={role.id} value={role.id}>
-                  {ROLE_LABELS[role.name] ?? role.name}
+                  {ROLE_LABELS[role.name]?.() ?? role.name}
                 </option>
               ))}
           </select>
@@ -318,14 +317,14 @@ export function UserManagement(): JSX.Element {
             }}
           >
             <Send className="h-4 w-4" />
-            {isInviting ? 'Sending…' : 'Send invitation'}
+            {isInviting ? i18n.chrome.inviteSending : i18n.chrome.inviteButton}
           </Button>
         </div>
 
         <div className="mt-6">
-          <h4 className="text-sm font-medium mb-3">Pending invitations</h4>
+          <h4 className="text-sm font-medium mb-3">{i18n.chrome.pendingInvitationsTitle}</h4>
           {invitations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending invitations.</p>
+            <p className="text-sm text-muted-foreground">{i18n.chrome.noPendingInvitations}</p>
           ) : (
             <div className="space-y-2">
               {invitations.map((invitation) => (
@@ -338,8 +337,10 @@ export function UserManagement(): JSX.Element {
                     <div className="text-xs text-muted-foreground">
                       {invitation.roleId !== ''
                         ? roleDisplay(invitation.roleId)
-                        : 'No role (awaiting approval)'}
-                      {' · '}Expires {new Date(invitation.expiresAt).toLocaleDateString('en')}
+                        : i18n.chrome.inviteNoRoleOption}
+                      {' · '}
+                      {i18n.chrome.invitationExpiresLabel}{' '}
+                      {new Date(invitation.expiresAt).toLocaleDateString(i18n.locale)}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -349,8 +350,8 @@ export function UserManagement(): JSX.Element {
                         runWithToast(resendInvitation(invitation.id));
                       }}
                       className="p-1.5 rounded-md text-muted-foreground hover:bg-secondary hover:text-secondary-foreground transition-colors"
-                      aria-label="Resend"
-                      title="Resend"
+                      aria-label={i18n.chrome.invitationResend}
+                      title={i18n.chrome.invitationResend}
                     >
                       <RefreshCw className="h-4 w-4" />
                     </button>
@@ -360,8 +361,8 @@ export function UserManagement(): JSX.Element {
                         runWithToast(revokeInvitation(invitation.id));
                       }}
                       className="p-1.5 rounded-md text-muted-foreground hover:text-destructive-text hover:bg-secondary hover:text-secondary-foreground transition-colors"
-                      aria-label="Revoke"
-                      title="Revoke"
+                      aria-label={i18n.chrome.invitationRevoke}
+                      title={i18n.chrome.invitationRevoke}
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -385,10 +386,12 @@ export function UserManagement(): JSX.Element {
                   <UserIcon className="h-5 w-5 text-muted-foreground" />
                   <h3 className="text-lg font-semibold truncate">{user.email}</h3>
                 </div>
-                <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-1.5">
+                <div className="flex min-w-0 flex-wrap gap-3 text-sm text-muted-foreground [&>*]:max-w-full">
+                  <div className="flex min-w-0 items-center gap-1.5">
                     <Calendar className="h-4 w-4" />
-                    <span>{new Date(user.createdAt).toLocaleDateString('en')}</span>
+                    <span className="min-w-0 truncate">
+                      {new Date(user.createdAt).toLocaleDateString(i18n.locale)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -401,14 +404,14 @@ export function UserManagement(): JSX.Element {
                 }}
               >
                 <Trash2 className="h-4 w-4" />
-                Delete
+                {i18n.chrome.delete}
               </Button>
             </div>
 
             <div>
               <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4" />
-                Roles
+                {i18n.chrome.roles}
               </h4>
               <div className="flex flex-wrap gap-2 mb-4">
                 {user.roles.length > 0 ? (
@@ -419,14 +422,14 @@ export function UserManagement(): JSX.Element {
                         key={role.id}
                         className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 text-primary-text text-sm font-medium"
                       >
-                        <span>{ROLE_LABELS[role.name] ?? role.name}</span>
+                        <span>{ROLE_LABELS[role.name]?.() ?? role.name}</span>
                         <button
                           type="button"
                           onClick={() => {
                             runWithToast(removeRole(user.id, role.id));
                           }}
                           className="hover:text-accent-text transition-colors"
-                          aria-label="Remove role"
+                          aria-label={i18n.chrome.removeRole}
                         >
                           <ShieldMinus className="h-4 w-4" />
                         </button>
@@ -434,7 +437,9 @@ export function UserManagement(): JSX.Element {
                     ) : null;
                   })
                 ) : (
-                  <span className="text-sm text-muted-foreground">No roles assigned</span>
+                  <span className="text-sm text-muted-foreground">
+                    {i18n.chrome.noRolesAssigned}
+                  </span>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
@@ -456,7 +461,7 @@ export function UserManagement(): JSX.Element {
                       }}
                     >
                       <ShieldPlus className="h-4 w-4" />
-                      Add {ROLE_LABELS[role.name] ?? role.name}
+                      {i18n.chrome.addRole} {ROLE_LABELS[role.name]?.() ?? role.name}
                     </Button>
                   ))}
               </div>
@@ -475,14 +480,12 @@ export function UserManagement(): JSX.Element {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete user</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this user?
-            </AlertDialogDescription>
+            <AlertDialogTitle>{i18n.chrome.deleteUserTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{i18n.chrome.deleteUserConfirm}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline">{i18n.chrome.cancel}</Button>
             </AlertDialogCancel>
             <AlertDialogAction asChild>
               <Button
@@ -494,7 +497,7 @@ export function UserManagement(): JSX.Element {
                   }
                 }}
               >
-                Delete
+                {i18n.chrome.delete}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>

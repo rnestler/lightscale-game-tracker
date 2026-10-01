@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface QuerySort {
   field: string;
@@ -52,11 +53,41 @@ class DerivedSortRefusal extends Error {
     super(`Sorting by a calculated field is available for up to ${MAX_DERIVED_SORT_ROWS} records`);
   }
 }
+
+class PageRequestRefusal extends Error {
+  public readonly status = 400;
+  public readonly code = 'INVALID_QUERY';
+}
+
 const SORT_VALUE_ALIAS = '_sortValue';
+const CURSOR_SIGNATURE = /^[0-9a-f]{64}$/;
+
+function columnOf(columns: Record<string, string | undefined>, field: string): string | undefined {
+  return Object.hasOwn(columns, field) ? columns[field] : undefined;
+}
+
+function cursorSignature(payload: string): string {
+  const secret = process.env.BETTER_AUTH_SECRET;
+  if (secret === undefined || secret.trim().length === 0) {
+    throw new Error('Missing required environment variable: BETTER_AUTH_SECRET');
+  }
+  return createHmac('sha256', secret).update(`page-cursor.${payload}`).digest('hex');
+}
 
 function parseCursorJson(encoded: string): unknown {
+  const parts = encoded.split('.');
+  if (parts.length !== 2) {
+    return null;
+  }
+  const [payload, signature] = parts;
+  if (!CURSOR_SIGNATURE.test(signature)) {
+    return null;
+  }
+  if (!timingSafeEqual(Buffer.from(signature), Buffer.from(cursorSignature(payload)))) {
+    return null;
+  }
   try {
-    return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
   } catch {
     return null;
   }
@@ -165,7 +196,8 @@ function scalarValue(value: unknown): string | number | boolean | null {
 }
 
 function encodeCursor(cursor: PageCursor): string {
-  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+  const payload = Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+  return `${payload}.${cursorSignature(payload)}`;
 }
 
 function likePattern(search: string): string {
@@ -182,7 +214,7 @@ function searchPredicate(
   }
   const columns: string[] = [];
   for (const field of request.filter.fields) {
-    const column = source.searchColumns[field];
+    const column = columnOf(source.searchColumns, field);
     if (column !== undefined) {
       columns.push(column);
     }
@@ -206,7 +238,7 @@ function cursorPredicate(
   const alternatives: string[] = [];
   const keys = [...request.sort, { field: 'id', direction: request.sort[0].direction }];
   const expressions = [
-    ...request.sort.map((key) => source.sortColumns[key.field]),
+    ...request.sort.map((key) => columnOf(source.sortColumns, key.field)),
     source.keyColumn,
   ];
   const sortValues = [...cursor.sortValues, cursor.id];
@@ -250,10 +282,10 @@ export function buildPageQuery(source: PageSource, request: QueryRequest): PageQ
   const predicates = [...source.where];
   for (const key of request.sort) {
     if (
-      source.sortColumns[key.field] === undefined &&
+      columnOf(source.sortColumns, key.field) === undefined &&
       !(source.derivedFields ?? []).includes(key.field)
     ) {
-      throw new Error(`Unknown or non-sortable field: ${key.field}`);
+      throw new PageRequestRefusal(`Unknown or non-sortable field: ${key.field}`);
     }
   }
   const computed = request.sort.some((key) => (source.derivedFields ?? []).includes(key.field));
@@ -264,7 +296,7 @@ export function buildPageQuery(source: PageSource, request: QueryRequest): PageQ
   if (request.cursor !== undefined && !computed) {
     const cursor = decodeCursor(request.cursor);
     if (cursor === null) {
-      throw new Error('Invalid page cursor');
+      throw new PageRequestRefusal('Invalid page cursor');
     }
     predicates.push(cursorPredicate(source, request, cursor, values));
   }
@@ -277,11 +309,11 @@ export function buildPageQuery(source: PageSource, request: QueryRequest): PageQ
     };
   }
   const selections = request.sort.map(
-    (key, index) => `${source.sortColumns[key.field]} AS "${SORT_VALUE_ALIAS}${index}"`
+    (key, index) => `${columnOf(source.sortColumns, key.field)} AS "${SORT_VALUE_ALIAS}${index}"`
   );
   const order = request.sort.map(
     (key) =>
-      `${source.sortColumns[key.field]}${key.direction === 'ascending' ? ' ASC NULLS FIRST' : ' DESC NULLS LAST'}`
+      `${columnOf(source.sortColumns, key.field)}${key.direction === 'ascending' ? ' ASC NULLS FIRST' : ' DESC NULLS LAST'}`
   );
   order.push(`${source.keyColumn}${request.sort[0].direction === 'ascending' ? ' ASC' : ' DESC'}`);
   values.push(request.limit + 1);

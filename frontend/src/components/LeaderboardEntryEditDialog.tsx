@@ -1,14 +1,19 @@
-import type { JSX } from 'react';
-import { useState } from 'react';
-import type * as $Domain from '../types/domain';
-import { usePermissions, canUpdateField, canCreateField } from '../hooks/usePermissions';
+import { i18n } from '../i18n/text';
+import { useState, type JSX } from 'react';
+import { useGames } from '../hooks/useGames';
 import { useLeaderboards } from '../hooks/useLeaderboards';
 import { usePlayers } from '../hooks/usePlayers';
-import { useGames } from '../hooks/useGames';
+import { useAvailability } from '../hooks/useAvailability';
+import { Input } from './ui/input';
+import { FormField, FormDateTimePicker, FormSelect } from './ui/form-field';
+import { usePermissions } from '../hooks/usePermissions';
+import { GameTypeEditDialog } from './GameTypeEditDialog';
+import { PlayerEditDialog } from './PlayerEditDialog';
+import { refusalFieldErrors, runWithToast } from '../utils/errorHandling';
+import type * as $Domain from '../types/domain';
+import { Loader2Icon } from 'lucide-react';
 import { toast } from '../utils/toast';
-
-import { getErrorMessage, refusalFieldErrors, runWithToast } from '../utils/errorHandling';
-import { textValue } from '../utils/recordValues';
+import { Skeleton } from './ui/skeleton';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -18,15 +23,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  focusFirstField,
 } from './ui/dialog';
-import { Input } from './ui/input';
-import { FormField, FormSelect, FormDateTimePicker } from './ui/form-field';
-import { useAvailability } from '../hooks/useAvailability';
-import { ErrorMessage } from './ui/error-message';
-import { PlayerEditDialog } from './PlayerEditDialog';
-import { GameTypeEditDialog } from './GameTypeEditDialog';
-import { Loader2Icon } from 'lucide-react';
-
+type FormErrors = Partial<Record<string, string>>;
 interface LeaderboardEntryEditDialogProps {
   open: boolean;
   editing: $Domain.LeaderboardEntry | null;
@@ -55,8 +54,6 @@ interface LeaderboardEntryEditDialogProps {
   }) => Promise<{ id: string } | void>;
 }
 
-type FormErrors = Partial<Record<string, string>>;
-
 export function LeaderboardEntryEditDialog({
   open,
   editing,
@@ -67,96 +64,157 @@ export function LeaderboardEntryEditDialog({
   defaults = {},
 }: LeaderboardEntryEditDialogProps): JSX.Element {
   const { permissions } = usePermissions();
-  const leaderboardsHook = useLeaderboards({ autoLoad: false });
-  const { players, createPlayer, isBusy: isBusyPlayer } = usePlayers();
-  const { games, createGameType, isBusy: isBusyGameType } = useGames();
-  const [player$, setPlayer$] = useState('');
-  const [game$, setGame$] = useState('');
-  const [rating$, setRating$] = useState('1200');
-  const [matchesPlayed$, setMatchesPlayed$] = useState('0');
-  const [wins$, setWins$] = useState('0');
-  const [losses$, setLosses$] = useState('0');
-  const [draws$, setDraws$] = useState('0');
-  const [lastPlayedAt$, setLastPlayedAt$] = useState(new Date().toISOString());
-  const [player$CreateOpen, setPlayer$CreateOpen] = useState(false);
-  const [game$CreateOpen, setGame$CreateOpen] = useState(false);
+  const { games, isInitializing: gamesInitializing, createGameType } = useGames({ autoLoad: open });
+  const { reloadLeaderboards, createLeaderboardEntry, updateLeaderboardEntry } = useLeaderboards({
+    autoLoad: false,
+  });
+  const {
+    players,
+    isInitializing: playersInitializing,
+    createPlayer,
+  } = usePlayers({ autoLoad: open });
+  const canSubmitEditLeaderboardEntry = editing
+    ? (permissions?.['leaderboards']?.update ?? false)
+    : (permissions?.['leaderboards']?.create ?? false);
+  const [editLeaderboardEntryPlayer$, setEditLeaderboardEntryPlayer$] = useState(
+    defaults.playerId ?? ''
+  );
+  const [editLeaderboardEntryGame$, setEditLeaderboardEntryGame$] = useState(defaults.gameId ?? '');
+  const [editLeaderboardEntryRating$, setEditLeaderboardEntryRating$] = useState(
+    defaults.rating !== undefined ? String(defaults.rating) : '1200'
+  );
+  const [editLeaderboardEntryMatchesPlayed$, setEditLeaderboardEntryMatchesPlayed$] = useState(
+    defaults.matchesPlayed !== undefined ? String(defaults.matchesPlayed) : '0'
+  );
+  const [editLeaderboardEntryWins$, setEditLeaderboardEntryWins$] = useState(
+    defaults.wins !== undefined ? String(defaults.wins) : '0'
+  );
+  const [editLeaderboardEntryLosses$, setEditLeaderboardEntryLosses$] = useState(
+    defaults.losses !== undefined ? String(defaults.losses) : '0'
+  );
+  const [editLeaderboardEntryDraws$, setEditLeaderboardEntryDraws$] = useState(
+    defaults.draws !== undefined ? String(defaults.draws) : '0'
+  );
+  const [editLeaderboardEntryLastPlayedAt$, setEditLeaderboardEntryLastPlayedAt$] = useState(
+    defaults.lastPlayedAt ?? new Date().toISOString()
+  );
   const availability = useAvailability({
     resource: 'leaderboards',
     rules: [['playerId', 'gameId']],
-    values: { playerId: player$, gameId: game$ },
+    values: { playerId: editLeaderboardEntryPlayer$, gameId: editLeaderboardEntryGame$ },
     domains: {},
-    excludeId: editing !== null ? editing.id : null,
+    excludeId: editing?.id ?? null,
   });
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [rootError, setRootError] = useState<string | null>(null);
-  const [seededKey, setSeededKey] = useState<string | null>(null);
-  const seedKey = open ? (editing?.id ?? 'new') : null;
-  if (seededKey !== seedKey) {
-    setSeededKey(seedKey);
-    if (seedKey !== null && editing) {
-      setPlayer$(textValue(editing.playerId));
-      setGame$(textValue(editing.gameId));
-      setRating$(textValue(editing.rating));
-      setMatchesPlayed$(textValue(editing.matchesPlayed));
-      setWins$(textValue(editing.wins));
-      setLosses$(textValue(editing.losses));
-      setDraws$(textValue(editing.draws));
-      setLastPlayedAt$(textValue(editing.lastPlayedAt));
-      setErrors({});
-      setRootError(null);
-    } else if (seedKey !== null) {
-      setPlayer$(defaults.playerId ?? '');
-      setGame$(defaults.gameId ?? '');
-      setRating$(defaults.rating !== undefined ? String(defaults.rating) : '1200');
-      setMatchesPlayed$(
-        defaults.matchesPlayed !== undefined ? String(defaults.matchesPlayed) : '0'
+  const [editLeaderboardEntryPlayer$CreateOpen, setEditLeaderboardEntryPlayer$CreateOpen] =
+    useState(false);
+  const [editLeaderboardEntryGame$CreateOpen, setEditLeaderboardEntryGame$CreateOpen] =
+    useState(false);
+  const [editLeaderboardEntryErrors, setEditLeaderboardEntryErrors] = useState<FormErrors>({});
+  const [editLeaderboardEntrySeededId, setEditLeaderboardEntrySeededId] = useState<string | null>(
+    null
+  );
+  const editLeaderboardEntrySeedKey = open ? (editing?.id ?? 'new') : null;
+  if (editLeaderboardEntrySeededId !== editLeaderboardEntrySeedKey) {
+    setEditLeaderboardEntrySeededId(editLeaderboardEntrySeedKey);
+    if (editLeaderboardEntrySeedKey !== null) {
+      setEditLeaderboardEntryPlayer$(editing ? editing.playerId : (defaults.playerId ?? ''));
+      setEditLeaderboardEntryGame$(editing ? editing.gameId : (defaults.gameId ?? ''));
+      setEditLeaderboardEntryRating$(
+        editing
+          ? String(editing.rating)
+          : defaults.rating !== undefined
+            ? String(defaults.rating)
+            : '1200'
       );
-      setWins$(defaults.wins !== undefined ? String(defaults.wins) : '0');
-      setLosses$(defaults.losses !== undefined ? String(defaults.losses) : '0');
-      setDraws$(defaults.draws !== undefined ? String(defaults.draws) : '0');
-      setLastPlayedAt$(defaults.lastPlayedAt ?? new Date().toISOString());
-      setErrors({});
-      setRootError(null);
+      setEditLeaderboardEntryMatchesPlayed$(
+        editing
+          ? String(editing.matchesPlayed)
+          : defaults.matchesPlayed !== undefined
+            ? String(defaults.matchesPlayed)
+            : '0'
+      );
+      setEditLeaderboardEntryWins$(
+        editing ? String(editing.wins) : defaults.wins !== undefined ? String(defaults.wins) : '0'
+      );
+      setEditLeaderboardEntryLosses$(
+        editing
+          ? String(editing.losses)
+          : defaults.losses !== undefined
+            ? String(defaults.losses)
+            : '0'
+      );
+      setEditLeaderboardEntryDraws$(
+        editing
+          ? String(editing.draws)
+          : defaults.draws !== undefined
+            ? String(defaults.draws)
+            : '0'
+      );
+      setEditLeaderboardEntryLastPlayedAt$(
+        editing ? editing.lastPlayedAt : (defaults.lastPlayedAt ?? new Date().toISOString())
+      );
+      setEditLeaderboardEntryErrors({});
     }
   }
-  async function submit(): Promise<void> {
+  async function submitEditLeaderboardEntry(): Promise<void> {
     const newErrors: FormErrors = {};
-    if (!player$.trim()) {
-      newErrors.player = 'Player is required.';
+    if (!editLeaderboardEntryPlayer$.trim()) {
+      newErrors.player = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('LeaderboardEntry.player'),
+      });
     }
-    if (!game$.trim()) {
-      newErrors.game = 'Game is required.';
+    if (!editLeaderboardEntryGame$.trim()) {
+      newErrors.game = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('LeaderboardEntry.game'),
+      });
     }
-    setErrors(newErrors);
+    setEditLeaderboardEntryErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
       return;
     }
-    const data = {
-      playerId: player$,
-      gameId: game$,
-      rating: rating$.trim() === '' ? 0 : Math.trunc(parseFloat(rating$)),
-      matchesPlayed: matchesPlayed$.trim() === '' ? 0 : Math.trunc(parseFloat(matchesPlayed$)),
-      wins: wins$.trim() === '' ? 0 : Math.trunc(parseFloat(wins$)),
-      losses: losses$.trim() === '' ? 0 : Math.trunc(parseFloat(losses$)),
-      draws: draws$.trim() === '' ? 0 : Math.trunc(parseFloat(draws$)),
-      lastPlayedAt: lastPlayedAt$,
-    };
     try {
+      const draft = {
+        playerId: editLeaderboardEntryPlayer$,
+        gameId: editLeaderboardEntryGame$,
+        rating:
+          editLeaderboardEntryRating$.trim() === ''
+            ? 0
+            : Math.trunc(parseFloat(editLeaderboardEntryRating$)),
+        matchesPlayed:
+          editLeaderboardEntryMatchesPlayed$.trim() === ''
+            ? 0
+            : Math.trunc(parseFloat(editLeaderboardEntryMatchesPlayed$)),
+        wins:
+          editLeaderboardEntryWins$.trim() === ''
+            ? 0
+            : Math.trunc(parseFloat(editLeaderboardEntryWins$)),
+        losses:
+          editLeaderboardEntryLosses$.trim() === ''
+            ? 0
+            : Math.trunc(parseFloat(editLeaderboardEntryLosses$)),
+        draws:
+          editLeaderboardEntryDraws$.trim() === ''
+            ? 0
+            : Math.trunc(parseFloat(editLeaderboardEntryDraws$)),
+        lastPlayedAt: editLeaderboardEntryLastPlayedAt$,
+      };
       if (onSave) {
-        await onSave(data);
+        await onSave(draft);
+      } else if (editing) {
+        await updateLeaderboardEntry({ ...editing, ...draft });
+        toast(i18n.chrome.itemSaved);
       } else {
-        if (editing) {
-          await leaderboardsHook.updateLeaderboardEntry({ id: editing.id, ...data });
-        } else {
-          await leaderboardsHook.createLeaderboardEntry(data);
-        }
-        toast(editing !== null ? 'Changes saved.' : 'Leaderboard Entry created.');
-        await leaderboardsHook.reloadLeaderboards();
+        await createLeaderboardEntry(draft);
+        toast(i18n.fill(i18n.chrome.itemCreated, { name: i18n.word('LeaderboardEntry') }));
+      }
+      if (!onSave) {
+        await reloadLeaderboards();
       }
       if (onSaved) {
         onSaved();
       }
       onClose();
+      setEditLeaderboardEntryErrors({});
     } catch (error) {
       const fieldErrors = refusalFieldErrors(error, [
         'player',
@@ -169,204 +227,234 @@ export function LeaderboardEntryEditDialog({
         'lastPlayedAt',
       ]);
       if (fieldErrors === null) {
-        setRootError(getErrorMessage(error, 'Save failed'));
-      } else {
-        setErrors(fieldErrors);
+        throw error;
       }
+      setEditLeaderboardEntryErrors(fieldErrors);
     }
   }
-  const selectedLabel = editing ? 'Edit leaderboard entry' : 'New leaderboard entry';
+  if (gamesInitializing || playersInitializing) {
+    return (
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editing
+                ? i18n.fill(i18n.chrome.editLabel, { name: i18n.word('LeaderboardEntry') })
+                : i18n.fill(i18n.chrome.newLabel, { name: i18n.word('LeaderboardEntry') })}
+            </DialogTitle>
+            <DialogDescription>
+              {i18n.fill(i18n.chrome.editDescription, { name: i18n.word('LeaderboardEntry') })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <div
+              role="status"
+              aria-label={i18n.chrome.loading}
+              className="rounded-xl border border-border bg-card p-4 space-y-3"
+            >
+              <Skeleton className="h-5 w-1/3" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    );
+  }
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{selectedLabel}</DialogTitle>
+          <DialogTitle>
+            {editing
+              ? i18n.fill(i18n.chrome.editLabel, { name: i18n.word('LeaderboardEntry') })
+              : i18n.fill(i18n.chrome.newLabel, { name: i18n.word('LeaderboardEntry') })}
+          </DialogTitle>
           <DialogDescription>
-            Fill in the leaderboard entry details below. Required fields are marked with an
-            asterisk.
+            {i18n.fill(i18n.chrome.editDescription, { name: i18n.word('LeaderboardEntry') })}
           </DialogDescription>
         </DialogHeader>
+        {editing?._sample && (
+          <p role="note" className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+            {i18n.chrome.sampleConversion}
+          </p>
+        )}
         <form
+          ref={focusFirstField}
+          className="flex flex-1 flex-col min-h-0"
           onSubmit={(submitEvent) => {
             submitEvent.preventDefault();
-            runWithToast(submit());
+            submitEvent.stopPropagation();
+            runWithToast(submitEditLeaderboardEntry());
           }}
         >
           <DialogBody>
-            <div data-ls="473b98de18" className="space-y-6">
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'leaderboards',
-                  'playerId'
-                ) && (
-                  <FormField data-ls="c4b3c34cfd" label="Player" required error={errors.player}>
-                    <FormSelect
-                      value={player$}
-                      onChange={(value: string) => {
-                        if (value !== player$) {
-                          setGame$('');
-                        }
-                        setPlayer$(value);
-                      }}
-                      options={players.map((playerOption) => ({
-                        value: playerOption.id,
-                        label: String(playerOption.nickname).trim() || 'Player',
-                      }))}
-                      placeholder="Select player..."
-                      disabled={availability.locked('playerId')}
-                      unavailable={availability.taken('playerId')}
-                      onOpen={availability.refresh}
-                      currentValue={editing?.playerId}
-                      onCreateNew={
-                        permissions?.['players']?.create
-                          ? (): void => {
-                              setPlayer$CreateOpen(true);
-                            }
-                          : undefined
+            <div className="@container flex flex-col gap-6" data-ls="473b98de18">
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+                <FormField
+                  data-ls="c4b3c34cfd"
+                  label={i18n.word('LeaderboardEntry.player')}
+                  required
+                  error={editLeaderboardEntryErrors.player}
+                >
+                  <FormSelect
+                    value={editLeaderboardEntryPlayer$}
+                    onChange={(value: string) => {
+                      if (value !== editLeaderboardEntryPlayer$) {
+                        setEditLeaderboardEntryGame$('');
                       }
-                      createNewLabel="+ Create new player"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'leaderboards',
-                  'gameId'
-                ) && (
-                  <FormField data-ls="db745f60dd" label="Game" required error={errors.game}>
-                    <FormSelect
-                      value={game$}
-                      onChange={setGame$}
-                      options={games.map((gameTypeOption) => ({
-                        value: gameTypeOption.id,
-                        label: String(gameTypeOption.name).trim() || 'GameType',
-                      }))}
-                      placeholder="Select game..."
-                      disabled={availability.locked('gameId')}
-                      unavailable={availability.taken('gameId')}
-                      onOpen={availability.refresh}
-                      currentValue={editing?.gameId}
-                      onCreateNew={
-                        permissions?.['games']?.create
-                          ? (): void => {
-                              setGame$CreateOpen(true);
-                            }
-                          : undefined
-                      }
-                      createNewLabel="+ Create new game"
-                    />
-                  </FormField>
-                )}
-              </div>
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'leaderboards',
-                  'rating'
-                ) && (
-                  <FormField data-ls="30e4676e04" label="Current Rating" error={errors.rating}>
-                    <Input
-                      type="number"
-                      step="1"
-                      inputMode="numeric"
-                      value={rating$}
-                      onChange={(e) => {
-                        setRating$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'leaderboards',
-                  'matchesPlayed'
-                ) && (
-                  <FormField
-                    data-ls="b391712d5d"
-                    label="Matches Played"
-                    error={errors.matchesPlayed}
-                  >
-                    <Input
-                      type="number"
-                      step="1"
-                      inputMode="numeric"
-                      value={matchesPlayed$}
-                      onChange={(e) => {
-                        setMatchesPlayed$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-              </div>
-              <div className="grid gap-6 sm:grid-cols-3 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'leaderboards',
-                  'wins'
-                ) && (
-                  <FormField data-ls="1c9242efb7" label="Wins" error={errors.wins}>
-                    <Input
-                      type="number"
-                      step="1"
-                      inputMode="numeric"
-                      value={wins$}
-                      onChange={(e) => {
-                        setWins$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'leaderboards',
-                  'losses'
-                ) && (
-                  <FormField data-ls="ce5526379f" label="Losses" error={errors.losses}>
-                    <Input
-                      type="number"
-                      step="1"
-                      inputMode="numeric"
-                      value={losses$}
-                      onChange={(e) => {
-                        setLosses$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'leaderboards',
-                  'draws'
-                ) && (
-                  <FormField data-ls="11e27a750c" label="Draws" error={errors.draws}>
-                    <Input
-                      type="number"
-                      step="1"
-                      inputMode="numeric"
-                      value={draws$}
-                      onChange={(e) => {
-                        setDraws$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-              </div>
-              {(editing ? canUpdateField : canCreateField)(
-                permissions,
-                'leaderboards',
-                'lastPlayedAt'
-              ) && (
-                <FormField data-ls="2288be5155" label="Last Activity" error={errors.lastPlayedAt}>
-                  <FormDateTimePicker value={lastPlayedAt$} onChange={setLastPlayedAt$} />
+                      setEditLeaderboardEntryPlayer$(value);
+                    }}
+                    options={players.map((playerOption) => ({
+                      value: playerOption.id,
+                      label: String(playerOption.nickname).trim() || 'Player',
+                    }))}
+                    placeholder={i18n.fill(i18n.chrome.selectPlaceholder, {
+                      name: i18n.word('Player'),
+                    })}
+                    disabled={availability.locked('playerId')}
+                    unavailable={availability.taken('playerId')}
+                    onOpen={availability.refresh}
+                    currentValue={editing?.playerId}
+                    onCreateNew={
+                      permissions?.['players']?.create
+                        ? (): void => {
+                            setEditLeaderboardEntryPlayer$CreateOpen(true);
+                          }
+                        : undefined
+                    }
+                    createNewLabel={i18n.fill(i18n.chrome.createNewItem, {
+                      name: i18n.word('Player'),
+                    })}
+                  />
                 </FormField>
-              )}
-              {rootError !== null && <ErrorMessage message={rootError} />}
+                <FormField
+                  data-ls="db745f60dd"
+                  label={i18n.word('LeaderboardEntry.game')}
+                  required
+                  error={editLeaderboardEntryErrors.game}
+                >
+                  <FormSelect
+                    value={editLeaderboardEntryGame$}
+                    onChange={setEditLeaderboardEntryGame$}
+                    options={games.map((gameTypeOption) => ({
+                      value: gameTypeOption.id,
+                      label: String(gameTypeOption.name).trim() || 'GameType',
+                    }))}
+                    placeholder={i18n.fill(i18n.chrome.selectPlaceholder, {
+                      name: i18n.word('GameType'),
+                    })}
+                    disabled={availability.locked('gameId')}
+                    unavailable={availability.taken('gameId')}
+                    onOpen={availability.refresh}
+                    currentValue={editing?.gameId}
+                    onCreateNew={
+                      permissions?.['games']?.create
+                        ? (): void => {
+                            setEditLeaderboardEntryGame$CreateOpen(true);
+                          }
+                        : undefined
+                    }
+                    createNewLabel={i18n.fill(i18n.chrome.createNewItem, {
+                      name: i18n.word('GameType'),
+                    })}
+                  />
+                </FormField>
+              </div>
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+                <FormField
+                  data-ls="30e4676e04"
+                  label={i18n.word('LeaderboardEntry.rating')}
+                  error={editLeaderboardEntryErrors.rating}
+                >
+                  <Input
+                    type="number"
+                    step="1"
+                    inputMode="numeric"
+                    value={editLeaderboardEntryRating$}
+                    onChange={(e) => {
+                      setEditLeaderboardEntryRating$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
+                </FormField>
+                <FormField
+                  data-ls="b391712d5d"
+                  label={i18n.word('LeaderboardEntry.matchesPlayed')}
+                  error={editLeaderboardEntryErrors.matchesPlayed}
+                >
+                  <Input
+                    type="number"
+                    step="1"
+                    inputMode="numeric"
+                    value={editLeaderboardEntryMatchesPlayed$}
+                    onChange={(e) => {
+                      setEditLeaderboardEntryMatchesPlayed$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
+                </FormField>
+              </div>
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-3">
+                <FormField
+                  data-ls="1c9242efb7"
+                  label={i18n.word('LeaderboardEntry.wins')}
+                  error={editLeaderboardEntryErrors.wins}
+                >
+                  <Input
+                    type="number"
+                    step="1"
+                    inputMode="numeric"
+                    value={editLeaderboardEntryWins$}
+                    onChange={(e) => {
+                      setEditLeaderboardEntryWins$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
+                </FormField>
+                <FormField
+                  data-ls="ce5526379f"
+                  label={i18n.word('LeaderboardEntry.losses')}
+                  error={editLeaderboardEntryErrors.losses}
+                >
+                  <Input
+                    type="number"
+                    step="1"
+                    inputMode="numeric"
+                    value={editLeaderboardEntryLosses$}
+                    onChange={(e) => {
+                      setEditLeaderboardEntryLosses$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
+                </FormField>
+                <FormField
+                  data-ls="11e27a750c"
+                  label={i18n.word('LeaderboardEntry.draws')}
+                  error={editLeaderboardEntryErrors.draws}
+                >
+                  <Input
+                    type="number"
+                    step="1"
+                    inputMode="numeric"
+                    value={editLeaderboardEntryDraws$}
+                    onChange={(e) => {
+                      setEditLeaderboardEntryDraws$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
+                </FormField>
+              </div>
+              <FormField
+                data-ls="2288be5155"
+                label={i18n.word('LeaderboardEntry.lastPlayedAt')}
+                error={editLeaderboardEntryErrors.lastPlayedAt}
+              >
+                <FormDateTimePicker
+                  value={editLeaderboardEntryLastPlayedAt$}
+                  onChange={setEditLeaderboardEntryLastPlayedAt$}
+                />
+              </FormField>
             </div>
           </DialogBody>
           <DialogFooter>
@@ -376,55 +464,59 @@ export function LeaderboardEntryEditDialog({
               onClick={onClose}
               className="rounded-md h-10 px-4 text-sm"
             >
-              Cancel
+              {i18n.chrome.cancel}
             </Button>
-            <Button
-              type="submit"
-              data-ls="10348e84da"
-              variant="default"
-              disabled={isBusy}
-              className="rounded-md shadow-sm h-10 px-4 text-sm"
-            >
-              {isBusy ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2Icon className="h-4 w-4 animate-spin" />
-                  {'Saving...'}
-                </span>
-              ) : editing ? (
-                'Save changes'
-              ) : (
-                'Create leaderboard entry'
-              )}
-            </Button>
+            {canSubmitEditLeaderboardEntry && (
+              <Button
+                type="submit"
+                data-ls="10348e84da"
+                variant="default"
+                disabled={isBusy}
+                className="rounded-md shadow-sm h-10 px-4 text-sm"
+              >
+                {isBusy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2Icon className="h-4 w-4 animate-spin" />
+                    {i18n.chrome.savingIndicator}
+                  </span>
+                ) : editing?._sample ? (
+                  i18n.chrome.saveAsNormalRecord
+                ) : editing ? (
+                  i18n.chrome.saveChanges
+                ) : (
+                  i18n.fill(i18n.chrome.createItem, { name: i18n.word('LeaderboardEntry') })
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </form>
-        {player$CreateOpen && (
+        {editLeaderboardEntryPlayer$CreateOpen && (
           <PlayerEditDialog
-            open={player$CreateOpen}
+            open={editLeaderboardEntryPlayer$CreateOpen}
             editing={null}
-            isBusy={isBusyPlayer}
+            isBusy={false}
             onClose={() => {
-              setPlayer$CreateOpen(false);
+              setEditLeaderboardEntryPlayer$CreateOpen(false);
             }}
             onSave={async (data) => {
               const created = await createPlayer(data);
-              setPlayer$(created.id);
-              setPlayer$CreateOpen(false);
+              setEditLeaderboardEntryPlayer$(created.id);
+              setEditLeaderboardEntryPlayer$CreateOpen(false);
             }}
           />
         )}
-        {game$CreateOpen && (
+        {editLeaderboardEntryGame$CreateOpen && (
           <GameTypeEditDialog
-            open={game$CreateOpen}
+            open={editLeaderboardEntryGame$CreateOpen}
             editing={null}
-            isBusy={isBusyGameType}
+            isBusy={false}
             onClose={() => {
-              setGame$CreateOpen(false);
+              setEditLeaderboardEntryGame$CreateOpen(false);
             }}
             onSave={async (data) => {
               const created = await createGameType(data);
-              setGame$(created.id);
-              setGame$CreateOpen(false);
+              setEditLeaderboardEntryGame$(created.id);
+              setEditLeaderboardEntryGame$CreateOpen(false);
             }}
           />
         )}

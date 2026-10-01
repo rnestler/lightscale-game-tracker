@@ -20,6 +20,8 @@ export type ArgFieldSpec =
   | { kind: 'textarea'; name: string; label: string }
   | { kind: 'boolean'; name: string; label: string }
   | { kind: 'date'; name: string; label: string }
+  | { kind: 'time'; name: string; label: string }
+  | { kind: 'localdatetime'; name: string; label: string }
   | { kind: 'datetime'; name: string; label: string }
   | { kind: 'user'; name: string; label: string }
   | {
@@ -161,7 +163,7 @@ export function TransactionArgsDialog({
                     onChange={(event) => {
                       setValue(field.name, event.target.value);
                     }}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
                     <option value="">{field.placeholder}</option>
                     {field.options.map((option) => (
@@ -178,9 +180,11 @@ export function TransactionArgsDialog({
                         ? 'number'
                         : field.kind === 'date'
                           ? 'date'
-                          : field.kind === 'datetime'
-                            ? 'datetime-local'
-                            : 'text'
+                          : field.kind === 'time'
+                            ? 'time'
+                            : field.kind === 'datetime' || field.kind === 'localdatetime'
+                              ? 'datetime-local'
+                              : 'text'
                     }
                     step={field.kind === 'number' ? (field.decimal ? 'any' : '1') : undefined}
                     inputMode={

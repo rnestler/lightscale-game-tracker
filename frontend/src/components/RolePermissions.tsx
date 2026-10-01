@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { apiBaseUrl } from '../config/apiConfig';
@@ -21,35 +22,35 @@ interface GrantedOperation {
   scope: 'all' | 'own';
 }
 
-const RESOURCE_LABELS: Record<string, string | undefined> = {
-  games: 'Games',
-  'games.leaderboard': 'Games › Game Leaderboard',
-  players: 'Players',
-  matches: 'Matches',
-  leaderboards: 'Leaderboards',
+const RESOURCE_LABELS: Record<string, (() => string) | undefined> = {
+  games: (): string => i18n.word('games'),
+  'games.leaderboard': (): string => `${i18n.word('games')} › ${i18n.word('GameType.leaderboard')}`,
+  players: (): string => i18n.word('players'),
+  matches: (): string => i18n.word('matches'),
+  leaderboards: (): string => i18n.word('leaderboards'),
 };
 
-const ROLE_LABELS: Record<string, string | undefined> = {
-  guest: 'Guest',
-  unassigned: 'Unassigned',
-  admin: 'Admin',
-  player: 'Player',
-  scorekeeper: 'Scorekeeper',
+const ROLE_LABELS: Record<string, (() => string) | undefined> = {
+  guest: (): string => i18n.chrome.guest,
+  unassigned: (): string => i18n.chrome.unassigned,
+  admin: (): string => i18n.chrome.admin,
+  player: (): string => i18n.word('role.player'),
+  scorekeeper: (): string => i18n.word('role.scorekeeper'),
 };
 
-const OPERATIONS: Array<{ key: OperationKey; label: string }> = [
-  { key: 'read', label: 'Read' },
-  { key: 'create', label: 'Create' },
-  { key: 'update', label: 'Update' },
-  { key: 'delete', label: 'Delete' },
+const OPERATIONS: Array<{ key: OperationKey; label: () => string }> = [
+  { key: 'read', label: (): string => i18n.chrome.rolePermissionsReadChip },
+  { key: 'create', label: (): string => i18n.chrome.rolePermissionsCreateChip },
+  { key: 'update', label: (): string => i18n.chrome.rolePermissionsUpdateChip },
+  { key: 'delete', label: (): string => i18n.chrome.rolePermissionsDeleteChip },
 ];
 
 function resourceLabel(path: string): string {
-  return RESOURCE_LABELS[path] ?? path.split('.').map(humanize).join(' › ');
+  return RESOURCE_LABELS[path]?.() ?? path.split('.').map(humanize).join(' › ');
 }
 
 function roleLabel(role: string): string {
-  return ROLE_LABELS[role] ?? humanize(role);
+  return ROLE_LABELS[role]?.() ?? humanize(role);
 }
 
 function grantedOperations(row: PermissionRow): GrantedOperation[] {
@@ -57,7 +58,7 @@ function grantedOperations(row: PermissionRow): GrantedOperation[] {
   for (const operation of OPERATIONS) {
     const scope = row[operation.key] ?? null;
     if (scope !== null) {
-      granted.push({ key: operation.key, label: operation.label, scope });
+      granted.push({ key: operation.key, label: operation.label(), scope });
     }
   }
   return granted;
@@ -66,7 +67,9 @@ function grantedOperations(row: PermissionRow): GrantedOperation[] {
 function PermissionCell({ row }: { row: PermissionRow }): JSX.Element {
   const granted = grantedOperations(row);
   if (granted.length === 0) {
-    return <span className="text-xs text-muted-foreground">No access</span>;
+    return (
+      <span className="text-xs text-muted-foreground">{i18n.chrome.rolePermissionsNoAccess}</span>
+    );
   }
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -77,7 +80,7 @@ function PermissionCell({ row }: { row: PermissionRow }): JSX.Element {
         >
           <span>{operation.label}</span>
           <span className="opacity-70">
-            {operation.scope === 'all' ? 'all records' : 'own records'}
+            {operation.scope === 'all' ? i18n.chrome.scopeAll : i18n.chrome.scopeOwn}
           </span>
         </span>
       ))}
@@ -96,12 +99,12 @@ export function RolePermissions(): JSX.Element {
         credentials: 'include',
       });
       if (!response.ok) {
-        throw new Error('Failed to fetch role permissions');
+        throw new Error(i18n.chrome.failedToFetchPermissions);
       }
       const data = (await response.json()) as PermissionView;
       setView(data);
     } catch (error) {
-      setErrorMessage('Failed to fetch role permissions');
+      setErrorMessage(i18n.chrome.failedToFetchPermissions);
       console.error('Failed to fetch role permissions:', error);
     }
   };
@@ -126,7 +129,7 @@ export function RolePermissions(): JSX.Element {
       <div className="flex items-start justify-center h-96">
         <div
           role="status"
-          aria-label={'Loading…'}
+          aria-label={i18n.chrome.loading}
           className="rounded-xl border border-border bg-card w-full max-w-2xl p-6 space-y-3"
         >
           <Skeleton className="h-5 w-1/3" />
@@ -138,12 +141,12 @@ export function RolePermissions(): JSX.Element {
   }
 
   return (
-    <div className="px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 lg:py-8 xl:py-10 max-w-7xl mx-auto">
+    <div className="w-full min-w-0 px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 lg:py-8 xl:py-10 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl lg:text-3xl font-bold mb-2" data-ls="e0d24108ee">
-          Role Permissions
+        <h1 className="text-2xl lg:text-3xl font-bold mb-2 break-words" data-ls="e0d24108ee">
+          {i18n.chrome.rolePermissionsTitle}
         </h1>
-        <p className="text-muted-foreground">Review the access each role has on resources.</p>
+        <p className="text-muted-foreground">{i18n.chrome.rolePermissionsSubtitle}</p>
       </div>
 
       {errorMessage && (
@@ -157,7 +160,9 @@ export function RolePermissions(): JSX.Element {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted">
-                <th className="text-left px-4 py-3 font-semibold">Resource</th>
+                <th className="text-left px-4 py-3 font-semibold">
+                  {i18n.chrome.rolePermissionsPathHeader}
+                </th>
                 {view.roles.map((role) => (
                   <th key={role} className="text-left px-4 py-3 font-semibold">
                     {roleLabel(role)}

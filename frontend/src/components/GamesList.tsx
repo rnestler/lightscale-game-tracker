@@ -1,4 +1,5 @@
-import { Fragment, useState, useEffect, type JSX } from 'react';
+import { i18n } from '../i18n/text';
+import { Fragment, useState, useEffect, type JSX, type ComponentProps } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { useGames } from '../hooks/useGames';
 import { usePermissions, canReadField } from '../hooks/usePermissions';
@@ -14,15 +15,24 @@ import {
   DicesIcon,
   PencilIcon,
   PlusIcon,
+  RotateCcwIcon,
   SearchIcon,
+  SearchXIcon,
   SlidersHorizontalIcon,
   Trash2Icon,
+  XIcon,
 } from 'lucide-react';
-import { getStoredHiddenColumns, setStoredHiddenColumns } from '../api/pagination';
+import {
+  getStoredHiddenColumns,
+  isLastShownColumn,
+  setStoredHiddenColumns,
+} from '../api/pagination';
+import { CalculatedMark } from './CalculatedMark';
 import { useRuleViolations } from '../hooks/useRuleViolations';
 import { RuleViolationMarker, RuleViolationsBanner } from './RuleViolationsNotice';
 import { RecordChip } from '../components/ui/record-chip';
 import { onNavigationTo } from '../utils/recordNavigation';
+import { isOwnClick } from '../utils/ownClick';
 import { SelectCards } from './ui/card-select';
 import { SkeletonCardGrid } from './ui/skeleton';
 
@@ -39,11 +49,13 @@ function cycleSort(state: SortState, key: string): SortState {
 }
 
 export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.Element {
+  const { permissions } = usePermissions();
   const {
     games,
     isInitializing: gamesInitializing,
     reloadGames,
     deleteGameType,
+    isBusy: gamesBusy,
     errorMessage: gamesError,
     total: gamesTotal,
     hasMore: gamesHasMore,
@@ -51,7 +63,6 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
     loadMore: loadMoreGames,
     loadAll: loadAllGames,
   } = useGames({ paged: true, pageSize: 24 });
-  const { permissions } = usePermissions();
   const gamesRuleViolations = useRuleViolations('games');
   const [gamesRuleFilter, setGamesRuleFilter] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -72,13 +83,13 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
   }, [pendingNavId, games]);
   const [gamesQuery, setGamesQuery] = useState('');
   const gamesCategoryLabels = new Map<string, string>([
-    ['chess', 'Chess & Variants'],
-    ['billiards', 'Billiards / Pool'],
-    ['tableTennis', 'Table Tennis'],
-    ['darts', 'Darts'],
-    ['boardGames', 'Board Games'],
-    ['cardGames', 'Card Games'],
-    ['custom', 'Custom / Other'],
+    ['chess', i18n.word('GameCategory.chess')],
+    ['billiards', i18n.word('GameCategory.billiards')],
+    ['tableTennis', i18n.word('GameCategory.tableTennis')],
+    ['darts', i18n.word('GameCategory.darts')],
+    ['boardGames', i18n.word('GameCategory.boardGames')],
+    ['cardGames', i18n.word('GameCategory.cardGames')],
+    ['custom', i18n.word('GameCategory.custom')],
   ]);
   const gamesSearchTerm = gamesQuery.trim().toLowerCase();
   const gamesMatches =
@@ -124,15 +135,22 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
   const gamesPageCount = Math.max(1, Math.ceil(sortedGames.length / 24));
   const gamesPageSafe = Math.min(gamesPage, gamesPageCount - 1);
   const pagedGames = sortedGames.slice(gamesPageSafe * 24, gamesPageSafe * 24 + 24);
-  const gamesColumnLabels: readonly string[] = [
-    'Display Name',
-    'Category',
-    'Variant / Ruleset',
-    'Game Name',
-    'Starting Rating (Default 1200)',
+  const gamesColumnKeys: readonly string[] = [
+    'displayName',
+    'category',
+    'rulesVariant',
+    'name',
+    'defaultRating',
+  ];
+  const gamesReadableColumns: readonly boolean[] = [
+    canReadField(permissions, 'games', 'displayName'),
+    canReadField(permissions, 'games', 'category'),
+    canReadField(permissions, 'games', 'rulesVariant'),
+    canReadField(permissions, 'games', 'name'),
+    canReadField(permissions, 'games', 'defaultRating'),
   ];
   const [gamesHiddenColumns, setGamesHiddenColumns] = useState<Set<number>>(() =>
-    getStoredHiddenColumns('games', gamesColumnLabels, [3, 4])
+    getStoredHiddenColumns('games', gamesColumnKeys, [3, 4])
   );
   function filterGamesRuleViolations(only: boolean): void {
     if (only !== gamesRuleFilter) {
@@ -153,7 +171,9 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
   }
   const [editingGames, setEditingGames] = useState<$Domain.GameType | null>(null);
   const [editingSelected, setEditingSelected] = useState<$Domain.GameType | null>(null);
-  const [creatingGames, setCreatingGames] = useState(false);
+  const [creatingGames, setCreatingGames] = useState<NonNullable<
+    ComponentProps<typeof GameTypeEditDialog>['defaults']
+  > | null>(null);
   const [deleteConfirmGameType, setDeleteConfirmGameType] = useState<{
     id: string;
     label: string;
@@ -168,11 +188,11 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
         <div className="flex flex-col gap-4 p-4 @md:p-8" data-ls="e943ea799a">
           {!(permissions?.['games']?.read ?? false) ? (
             <div
-              className="flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
+              className="overflow-x-auto flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
               data-ls="32bfc97a02"
             >
-              <span className="break-words text-muted-foreground" data-ls="c48b35103d">
-                {"You don't have permission to view this content."}
+              <span className="min-w-min text-muted-foreground" data-ls="c48b35103d">
+                {i18n.chrome.noPermission}
               </span>
             </div>
           ) : null}
@@ -182,30 +202,89 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                 className="flex flex-row items-center gap-3 min-w-0 flex-wrap [&>*]:max-w-full py-1"
                 data-ls="e00e53aeac"
               >
-                {gamesMatches.length === 1 ? (
-                  <span
-                    className="break-words text-sm text-muted-foreground shrink-0"
-                    data-ls="f25abaff52"
-                  >{`${gamesMatches.length} game`}</span>
+                {!(gamesMatches.length < gamesTotal) ? (
+                  <Fragment>
+                    {gamesMatches.length === 1 ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="5f783df598"
+                      >
+                        {i18n.fill(
+                          `{count} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('GameType') })}`,
+                          { count: gamesMatches.length }
+                        )}
+                      </span>
+                    ) : null}
+                    {!(gamesMatches.length === 1) ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="a0564affa0"
+                      >
+                        {i18n.fill(
+                          `{count} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('GameType', 1) })}`,
+                          { count: gamesMatches.length }
+                        )}
+                      </span>
+                    ) : null}
+                  </Fragment>
                 ) : null}
-                {!(gamesMatches.length === 1) ? (
-                  <span
-                    className="break-words text-sm text-muted-foreground shrink-0"
-                    data-ls="8c63c63ee7"
-                  >{`${gamesMatches.length} games`}</span>
+                {gamesMatches.length < gamesTotal ? (
+                  <Fragment>
+                    {gamesTotal === 1 ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="de3e3c1808"
+                      >
+                        {i18n.fill(
+                          `${i18n.chrome.countOfTotal} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('GameType') })}`,
+                          { shown: gamesMatches.length, total: gamesTotal }
+                        )}
+                      </span>
+                    ) : null}
+                    {!(gamesTotal === 1) ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="7e67cbd535"
+                      >
+                        {i18n.fill(
+                          `${i18n.chrome.countOfTotal} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('GameType', 1) })}`,
+                          { shown: gamesMatches.length, total: gamesTotal }
+                        )}
+                      </span>
+                    ) : null}
+                  </Fragment>
                 ) : null}
-                <div className="flex-1" data-ls="a0564affa0" />
-                <div className="relative min-w-[12rem] flex-1" data-ls="2f48fc6184">
+                <div className="flex-1" data-ls="94966c459b" />
+                <div className="relative min-w-[12rem] flex-1" data-ls="ff15f5c671">
                   <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input
                     value={gamesQuery}
                     onChange={(event) => {
                       setGamesQuery(event.target.value);
                     }}
-                    placeholder="Search…"
-                    aria-label="Search games by name"
-                    className="h-10 w-full rounded-md border border-border bg-transparent pl-9 pr-3 text-sm focus:border-primary focus:outline-none"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape' && gamesQuery !== '') {
+                        event.preventDefault();
+                        setGamesQuery('');
+                      }
+                    }}
+                    placeholder={i18n.chrome.search}
+                    aria-label={i18n.fill(i18n.chrome.searchLabel, { name: i18n.word('games') })}
+                    className={`h-10 w-full rounded-md border pl-9 pr-9 text-sm transition-colors focus:border-primary focus:outline-none ${gamesQuery === '' ? 'border-border bg-transparent' : 'border-primary bg-primary/5'}`}
                   />
+                  {gamesQuery !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGamesQuery('');
+                      }}
+                      aria-label={i18n.chrome.clearSearch}
+                      title={i18n.chrome.clearSearch}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
                 {(permissions?.['games']?.create ?? false) && (
                   <button
@@ -213,87 +292,101 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                     data-ls="5a40735d8b"
                     className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
                     onClick={() => {
-                      setCreatingGames(true);
+                      setCreatingGames({});
                     }}
                   >
                     <PlusIcon className="h-4 w-4" />
-                    {'Add game'}
+                    {i18n.fill(i18n.chrome.addItem, { name: i18n.word('GameType') })}
                   </button>
                 )}
               </div>
               {gamesError !== null ? (
                 <div
-                  className="flex flex-col p-3 rounded-md border border-border bg-secondary"
-                  data-ls="de3e3c1808"
+                  className="flex flex-col overflow-x-auto p-3 rounded-md border border-border bg-secondary"
+                  data-ls="ae6f8902c4"
                 >
-                  <span className="break-words text-sm" data-ls="1f67175096">
+                  <span className="min-w-min text-sm" data-ls="0210f802f2">
                     {gamesError}
                   </span>
                 </div>
               ) : null}
-              {gamesInitializing ? <SkeletonCardGrid data-ls="94966c459b" /> : null}
+              {gamesInitializing ? <SkeletonCardGrid data-ls="9c1d0c8710" /> : null}
               {gamesTotal === 0 && !gamesInitializing && !(gamesError !== null) ? (
                 <div
-                  className="flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
-                  data-ls="419a451dd3"
+                  className="overflow-x-auto flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
+                  data-ls="cebdee485f"
                 >
                   <DicesIcon
                     className="shrink-0 h-8 w-8 text-muted-foreground"
-                    data-ls="ae6f8902c4"
+                    data-ls="bb5d16b4eb"
                   />
-                  <span className="break-words text-base font-medium" data-ls="0210f802f2">
-                    {'No games yet'}
+                  <span className="min-w-min text-base font-medium" data-ls="bc4be56d94">
+                    {i18n.fill(i18n.chrome.noEntriesTitle, { name: i18n.word('games') })}
                   </span>
                   {(permissions?.['games']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="9c1d0c8710"
-                    >
-                      {'Get started by adding your first game.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="9f70eabc0b">
+                      {i18n.fill(i18n.chrome.noEntriesGetStarted, { name: i18n.word('GameType') })}
                     </span>
                   ) : null}
                   {(permissions?.['games']?.create ?? false) && (
                     <button
                       type="button"
-                      data-ls="a475314c39"
+                      data-ls="09a2e5bc2e"
                       className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
                       onClick={() => {
-                        setCreatingGames(true);
+                        setCreatingGames({});
                       }}
                     >
                       <PlusIcon className="h-4 w-4" />
-                      {'Add game'}
+                      {i18n.fill(i18n.chrome.addItem, { name: i18n.word('GameType') })}
                     </button>
                   )}
                 </div>
               ) : null}
-              {gamesMatches.length === 0 && !(gamesTotal === 0) ? (
+              {gamesMatches.length === 0 && !(gamesTotal === 0) && gamesBusy ? (
+                <SkeletonCardGrid data-ls="4a46b6d954" />
+              ) : null}
+              {gamesMatches.length === 0 && !(gamesTotal === 0) && !gamesBusy ? (
                 <div
-                  className="flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
-                  data-ls="bb5d16b4eb"
+                  className="overflow-x-auto flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
+                  data-ls="9df62a37b7"
                 >
+                  <SearchXIcon
+                    className="shrink-0 h-8 w-8 text-muted-foreground"
+                    data-ls="eca495b9cb"
+                  />
+                  <span className="min-w-min text-base font-medium" data-ls="8be967098d">
+                    {i18n.chrome.noMatches}
+                  </span>
                   {(permissions?.['games']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="4e5ff93fd7"
-                    >
-                      {'Try adjusting your search or add a new game.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="52cd4f8e27">
+                      {i18n.fill(i18n.chrome.noEntriesSearchCreate, {
+                        name: i18n.word('GameType'),
+                      })}
                     </span>
                   ) : null}
                   {!(permissions?.['games']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="09a2e5bc2e"
-                    >
-                      {'Try adjusting your search.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="2e5b844901">
+                      {i18n.chrome.noEntriesSearch}
                     </span>
                   ) : null}
+                  <button
+                    type="button"
+                    data-ls="bf73f34562"
+                    className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                    onClick={() => {
+                      setGamesQuery('');
+                    }}
+                  >
+                    <RotateCcwIcon className="h-4 w-4" />
+                    {i18n.chrome.showAll}
+                  </button>
                 </div>
               ) : null}
               {gamesMatches.length > 0 ? (
                 <div
                   className="ui-table-surface flex flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden"
-                  data-ls="4a46b6d954"
+                  data-ls="4a49faca4e"
                 >
                   <div className="flex flex-col gap-2">
                     <RuleViolationsBanner
@@ -322,23 +415,26 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                   }
                                   className="px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap"
                                 >
-                                  <button
-                                    type="button"
-                                    className="flex items-center gap-1 font-medium hover:text-foreground"
-                                    onClick={() => {
-                                      runWithToast(loadAllGames());
-                                      setGamesSort(cycleSort(gamesSort, 'displayName'));
-                                    }}
-                                  >
-                                    {'Display Name'}
-                                    <span aria-hidden="true">
-                                      {gamesSort?.key === 'displayName'
-                                        ? gamesSort.dir === 'asc'
-                                          ? ' \u25b2'
-                                          : ' \u25bc'
-                                        : ''}
-                                    </span>
-                                  </button>
+                                  <span className="inline-flex items-center">
+                                    <button
+                                      type="button"
+                                      className="flex items-center gap-1 font-medium hover:text-foreground"
+                                      onClick={() => {
+                                        runWithToast(loadAllGames());
+                                        setGamesSort(cycleSort(gamesSort, 'displayName'));
+                                      }}
+                                    >
+                                      {'Display Name'}
+                                      <span aria-hidden="true">
+                                        {gamesSort?.key === 'displayName'
+                                          ? gamesSort.dir === 'asc'
+                                            ? ' \u25b2'
+                                            : ' \u25bc'
+                                          : ''}
+                                      </span>
+                                    </button>
+                                    <CalculatedMark id="GameType.displayName" />
+                                  </span>
                                 </th>
                               )}
                             {!gamesHiddenColumns.has(1) &&
@@ -426,7 +522,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                       setGamesSort(cycleSort(gamesSort, 'name'));
                                     }}
                                   >
-                                    {'Game Name'}
+                                    {i18n.word('GameType.name')}
                                     <span aria-hidden="true">
                                       {gamesSort?.key === 'name'
                                         ? gamesSort.dir === 'asc'
@@ -458,7 +554,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                       setGamesSort(cycleSort(gamesSort, 'defaultRating'));
                                     }}
                                   >
-                                    {'Starting Rating (Default 1200)'}
+                                    {i18n.word('GameType.defaultRating')}
                                     <span aria-hidden="true">
                                       {gamesSort?.key === 'defaultRating'
                                         ? gamesSort.dir === 'asc'
@@ -479,7 +575,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                     <button
                                       type="button"
                                       className="h-8 px-1.5 inline-flex items-center gap-1.5 rounded-md text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                                      aria-label={'Toggle columns'}
+                                      aria-label={i18n.chrome.toggleColumns}
                                     >
                                       <SlidersHorizontalIcon className="h-4 w-4" />
                                     </button>
@@ -496,6 +592,11 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!gamesHiddenColumns.has(0)}
+                                            disabled={isLastShownColumn(
+                                              gamesHiddenColumns,
+                                              gamesReadableColumns,
+                                              0
+                                            )}
                                             onChange={() => {
                                               const next = new Set(gamesHiddenColumns);
                                               if (next.has(0)) {
@@ -505,7 +606,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                               }
                                               setStoredHiddenColumns(
                                                 'games',
-                                                gamesColumnLabels,
+                                                gamesColumnKeys,
                                                 next
                                               );
                                               setGamesHiddenColumns(next);
@@ -520,6 +621,11 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!gamesHiddenColumns.has(1)}
+                                            disabled={isLastShownColumn(
+                                              gamesHiddenColumns,
+                                              gamesReadableColumns,
+                                              1
+                                            )}
                                             onChange={() => {
                                               const next = new Set(gamesHiddenColumns);
                                               if (next.has(1)) {
@@ -529,7 +635,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                               }
                                               setStoredHiddenColumns(
                                                 'games',
-                                                gamesColumnLabels,
+                                                gamesColumnKeys,
                                                 next
                                               );
                                               setGamesHiddenColumns(next);
@@ -544,6 +650,11 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!gamesHiddenColumns.has(2)}
+                                            disabled={isLastShownColumn(
+                                              gamesHiddenColumns,
+                                              gamesReadableColumns,
+                                              2
+                                            )}
                                             onChange={() => {
                                               const next = new Set(gamesHiddenColumns);
                                               if (next.has(2)) {
@@ -553,7 +664,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                               }
                                               setStoredHiddenColumns(
                                                 'games',
-                                                gamesColumnLabels,
+                                                gamesColumnKeys,
                                                 next
                                               );
                                               setGamesHiddenColumns(next);
@@ -568,6 +679,11 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!gamesHiddenColumns.has(3)}
+                                            disabled={isLastShownColumn(
+                                              gamesHiddenColumns,
+                                              gamesReadableColumns,
+                                              3
+                                            )}
                                             onChange={() => {
                                               const next = new Set(gamesHiddenColumns);
                                               if (next.has(3)) {
@@ -577,13 +693,13 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                               }
                                               setStoredHiddenColumns(
                                                 'games',
-                                                gamesColumnLabels,
+                                                gamesColumnKeys,
                                                 next
                                               );
                                               setGamesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Game Name'}</span>
+                                          <span>{i18n.word('GameType.name')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'games', 'defaultRating') && (
@@ -592,6 +708,11 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!gamesHiddenColumns.has(4)}
+                                            disabled={isLastShownColumn(
+                                              gamesHiddenColumns,
+                                              gamesReadableColumns,
+                                              4
+                                            )}
                                             onChange={() => {
                                               const next = new Set(gamesHiddenColumns);
                                               if (next.has(4)) {
@@ -601,13 +722,13 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                               }
                                               setStoredHiddenColumns(
                                                 'games',
-                                                gamesColumnLabels,
+                                                gamesColumnKeys,
                                                 next
                                               );
                                               setGamesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Starting Rating (Default 1200)'}</span>
+                                          <span>{i18n.word('GameType.defaultRating')}</span>
                                         </label>
                                       )}
                                     </Popover.Content>
@@ -625,15 +746,17 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                 className="px-4 py-8 text-center text-muted-foreground"
                                 role="status"
                               >
-                                {games.length === 0 ? 'No data yet' : 'No matches'}
+                                {games.length === 0 ? i18n.chrome.noDataYet : i18n.chrome.noMatches}
                               </td>
                             </tr>
                           )}
                           {pagedGames.map((item) => (
                             <tr
                               key={item.id}
-                              onClick={() => {
-                                setSelectedId(item.id);
+                              onClick={(clickEvent) => {
+                                if (isOwnClick(clickEvent)) {
+                                  setSelectedId(item.id);
+                                }
                               }}
                               className="group/row border-b border-border/50 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer"
                             >
@@ -651,7 +774,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                     data-label={'Display Name'}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="eca495b9cb">
+                                      <span className="min-w-min text-sm" data-ls="cce3771ddc">
                                         {item.displayName}
                                       </span>
                                     </div>
@@ -670,13 +793,13 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                         >
                                           <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
                                           {new Map([
-                                            ['chess', 'Chess & Variants'],
-                                            ['billiards', 'Billiards / Pool'],
-                                            ['tableTennis', 'Table Tennis'],
-                                            ['darts', 'Darts'],
-                                            ['boardGames', 'Board Games'],
-                                            ['cardGames', 'Card Games'],
-                                            ['custom', 'Custom / Other'],
+                                            ['chess', i18n.word("'Chess & Variants'")],
+                                            ['billiards', i18n.word("'Billiards / Pool'")],
+                                            ['tableTennis', i18n.word("'Table Tennis'")],
+                                            ['darts', i18n.word("'Darts'")],
+                                            ['boardGames', i18n.word("'Board Games'")],
+                                            ['cardGames', i18n.word("'Card Games'")],
+                                            ['custom', i18n.word("'Custom / Other'")],
                                           ]).get(item.category) ?? item.category}
                                         </span>
                                       )}
@@ -690,7 +813,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                     data-label={'Variant / Ruleset'}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="d4e665bba0">
+                                      <span className="min-w-min text-sm" data-ls="c89f663ba1">
                                         {item.rulesVariant}
                                       </span>
                                     </div>
@@ -700,14 +823,14 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                 canReadField(permissions, 'games', 'name') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Game Name'}
+                                    data-label={i18n.word('GameType.name')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       <RecordChip
                                         label={String(item.name)}
                                         icon={<DicesIcon className="h-3.5 w-3.5" />}
-                                        className="break-words text-sm"
-                                        data-ls="bf73f34562"
+                                        className="min-w-min text-sm"
+                                        data-ls="ade51f64af"
                                       />
                                     </div>
                                   </td>
@@ -716,21 +839,32 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                 canReadField(permissions, 'games', 'defaultRating') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Starting Rating (Default 1200)'}
+                                    data-label={i18n.word('GameType.defaultRating')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="4a49faca4e">
+                                      <span className="min-w-min text-sm" data-ls="7d020a300f">
                                         {item.defaultRating}
                                       </span>
                                     </div>
                                   </td>
                                 )}
-                              <td className="w-px px-3 py-2 text-right align-middle whitespace-nowrap opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity">
+                              <td
+                                className={
+                                  item._sample
+                                    ? 'w-px px-3 py-2 text-right align-middle whitespace-nowrap'
+                                    : 'w-px px-3 py-2 text-right align-middle whitespace-nowrap opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity'
+                                }
+                              >
                                 <div className="inline-flex items-center gap-1">
+                                  {item._sample && (
+                                    <span className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+                                      {i18n.chrome.sampleRecord}
+                                    </span>
+                                  )}
                                   {(permissions?.['games']?.update ?? false) && (
                                     <button
                                       type="button"
-                                      aria-label={'Edit'}
+                                      aria-label={i18n.chrome.edit}
                                       onClick={(clickEvent) => {
                                         clickEvent.stopPropagation();
                                         setEditingGames(item);
@@ -743,7 +877,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                                   {(permissions?.['games']?.delete ?? false) && (
                                     <button
                                       type="button"
-                                      aria-label={'Delete'}
+                                      aria-label={i18n.chrome.delete}
                                       onClick={(clickEvent) => {
                                         clickEvent.stopPropagation();
                                         runWithToast(
@@ -765,11 +899,16 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                       </table>
                       {(gamesPageCount > 1 || gamesHasMore) && (
                         <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border text-sm text-muted-foreground print:hidden">
-                          <span>{`Page ${gamesPageSafe + 1} of ${gamesPageCount}`}</span>
+                          <span>
+                            {i18n.fill(i18n.chrome.pageIndicator, {
+                              page: gamesPageSafe + 1,
+                              count: gamesPageCount,
+                            })}
+                          </span>
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              aria-label={'Previous page'}
+                              aria-label={i18n.chrome.previousPage}
                               onClick={() => {
                                 setGamesPage(Math.max(0, gamesPageSafe - 1));
                               }}
@@ -780,7 +919,7 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
                             </button>
                             <button
                               type="button"
-                              aria-label={'Next page'}
+                              aria-label={i18n.chrome.nextPage}
                               onClick={() => {
                                 if (gamesPageSafe >= gamesPageCount - 1 && gamesHasMore) {
                                   runWithToast(
@@ -861,23 +1000,26 @@ export function GamesList(_props: { onNavigate?: (view: string) => void }): JSX.
         }}
       />
       <GameTypeEditDialog
-        open={creatingGames}
+        open={creatingGames !== null}
         editing={null}
         isBusy={false}
+        defaults={creatingGames ?? {}}
         onSaved={() => {
           gamesRuleViolations.reload();
         }}
         onClose={() => {
-          setCreatingGames(false);
+          setCreatingGames(null);
           runWithToast(reloadGames());
         }}
       />
       <ConfirmDeleteDialog
         open={deleteConfirmGameType !== null}
-        title="Delete game"
-        description={`Are you sure you want to delete "${deleteConfirmGameType?.label ?? ''}"? This action cannot be undone.`}
-        cancelLabel="Cancel"
-        deleteLabel="Delete"
+        title={i18n.fill(i18n.chrome.deleteTitle, { name: i18n.word('GameType') })}
+        description={i18n.fill(i18n.chrome.deleteConfirm, {
+          item: deleteConfirmGameType?.label ?? '',
+        })}
+        cancelLabel={i18n.chrome.cancel}
+        deleteLabel={i18n.chrome.delete}
         onCancel={() => {
           setDeleteConfirmGameType(null);
         }}

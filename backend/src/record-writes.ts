@@ -17,17 +17,17 @@ export function assignedColumns(columns: Array<[string, unknown]>): AssignedColu
   return { clause: assignments.length === 0 ? 'id = id' : assignments.join(', '), values };
 }
 
-function storedValue(value: unknown): unknown {
-  return value instanceof Date ? value.toISOString() : value;
+function candidateValue(value: unknown): unknown {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return value === null ? '' : value;
 }
 
 export function mergedCandidate(stored: Row, body: Row): Row {
   const candidate: Row = {};
-  for (const [key, value] of Object.entries(stored)) {
-    candidate[key] = storedValue(value);
-  }
-  for (const [key, value] of Object.entries(body)) {
-    candidate[key] = value;
+  for (const [key, value] of Object.entries({ ...stored, ...body })) {
+    candidate[key] = candidateValue(value);
   }
   return candidate;
 }

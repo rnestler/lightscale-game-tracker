@@ -29,7 +29,7 @@ export const playersApi = {
     return httpClient.get<string[]>('/players');
   },
   multiGet(ids: string[]): Promise<$Domain.Player[]> {
-    return httpClient.query<$Domain.Player[]>('/players/multi-get', { ids });
+    return httpClient.records<$Domain.Player>('/players/multi-get', ids);
   },
   query(request: QueryRequest): Promise<QueryPage> {
     return httpClient.query<QueryPage>('/players/query', request);

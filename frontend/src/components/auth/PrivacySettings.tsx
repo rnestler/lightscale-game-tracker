@@ -1,3 +1,4 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState, useEffect } from 'react';
 import { apiBaseUrl } from '../../config/apiConfig.js';
@@ -31,6 +32,11 @@ function formatFieldValue(value: unknown): string {
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value);
   }
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .map(([field, entry]) => `${field}: ${formatFieldValue(entry)}`)
+      .join(', ');
+  }
   return JSON.stringify(value);
 }
 
@@ -52,7 +58,7 @@ export function PrivacySettings({
         credentials: 'include',
       });
       if (!response.ok) {
-        setLoadError('Could not load your personal data.');
+        setLoadError(i18n.chrome.privacyLoadFailed);
         setIsLoading(false);
         return;
       }
@@ -61,7 +67,7 @@ export function PrivacySettings({
       setIsLoading(false);
     };
     load().catch(() => {
-      setLoadError('Could not load your personal data.');
+      setLoadError(i18n.chrome.privacyLoadFailed);
       setIsLoading(false);
     });
   }, []);
@@ -95,7 +101,7 @@ export function PrivacySettings({
       setErasure('requested');
       return;
     }
-    setRequestError(`Request failed with status ${response.status}`);
+    setRequestError(i18n.fill(i18n.chrome.errorRequestFailed, { status: response.status }));
   };
 
   const hasData = report !== null && report.resources.length > 0;
@@ -103,10 +109,8 @@ export function PrivacySettings({
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
       <div className="flex flex-col gap-2">
-        <h3 className="text-lg font-semibold text-foreground">Your personal data</h3>
-        <p className="text-sm text-muted-foreground">
-          Review the personal data stored about you, download a copy, or request its erasure.
-        </p>
+        <h3 className="text-lg font-semibold text-foreground">{i18n.chrome.privacyTitle}</h3>
+        <p className="text-sm text-muted-foreground">{i18n.chrome.privacyDescription}</p>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -117,33 +121,33 @@ export function PrivacySettings({
           className="inline-flex items-center gap-2 h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Download className="h-4 w-4" />
-          Download my data (JSON)
+          {i18n.chrome.privacyDownload}
         </button>
         {canRequestErasure && (
           <button
             type="button"
             onClick={() => {
               requestErasure().catch(() => {
-                setRequestError('Could not submit your request. Please try again.');
+                setRequestError(i18n.chrome.guestPrivacyError);
               });
             }}
             disabled={erasure !== 'idle'}
             className="inline-flex items-center gap-2 h-10 rounded-lg border border-destructive/40 px-4 text-sm font-medium text-destructive-text hover:bg-destructive/5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Trash2 className="h-4 w-4" />
-            Request erasure
+            {i18n.chrome.privacyRequestErasure}
           </button>
         )}
       </div>
 
       {erasure === 'requested' && (
         <div className="rounded-lg border border-border bg-secondary p-3 text-sm text-foreground">
-          Erasure requested. An administrator will review it.
+          {i18n.chrome.privacyErasureRequested}
         </div>
       )}
       {erasure === 'pending' && (
         <div className="rounded-lg border border-border bg-secondary p-3 text-sm text-foreground">
-          You already have a pending erasure request.
+          {i18n.chrome.privacyErasurePending}
         </div>
       )}
       {error !== null && (
@@ -155,7 +159,7 @@ export function PrivacySettings({
       {!isLoading && !hasData && error === null && (
         <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
           <ShieldCheck className="h-5 w-5" />
-          No personal data is stored about you.
+          {i18n.chrome.privacyNoData}
         </div>
       )}
 
@@ -167,8 +171,12 @@ export function PrivacySettings({
               className="rounded-lg border border-border bg-card overflow-hidden"
             >
               <div className="flex items-center justify-between border-b border-border px-5 py-3">
-                <h4 className="text-sm font-semibold text-foreground">{group.resource}</h4>
-                <span className="text-xs text-muted-foreground">{group.records.length}</span>
+                <h4 className="min-w-0 truncate text-sm font-semibold text-foreground">
+                  {group.resource}
+                </h4>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {group.records.length}
+                </span>
               </div>
               <div className="divide-y divide-border">
                 {group.records.map((record) => (

@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { httpClient } from '../api/httpClient';
 import { getErrorMessage } from '../utils/errorHandling';
@@ -32,18 +33,20 @@ export interface TableRuleViolations {
   reportUnavailable: () => void;
 }
 
-const UNAVAILABLE = 'The records could not be checked just now. Please try again later.';
+function unavailable(): string {
+  return i18n.chrome.ruleViolationsUnavailable;
+}
 
-const KIND_LABELS: Record<RuleViolationKind, string> = {
-  unique: 'Duplicate values',
-  exclusive: 'Overlapping intervals',
-  check: 'Violated condition',
-  required: 'Missing value',
-  capacity: 'Limit exceeded',
+const KIND_LABELS: Record<RuleViolationKind, () => string> = {
+  unique: (): string => i18n.chrome.ruleViolationsUnique,
+  exclusive: (): string => i18n.chrome.ruleViolationsExclusive,
+  check: (): string => i18n.chrome.ruleViolationsCheck,
+  required: (): string => i18n.chrome.ruleViolationsRequired,
+  capacity: (): string => i18n.chrome.ruleViolationsCapacity,
 };
 
 export function ruleKindLabel(group: RuleViolationGroup): string {
-  return KIND_LABELS[group.kind];
+  return KIND_LABELS[group.kind]();
 }
 
 export function ruleKey(group: RuleViolationGroup): string {
@@ -59,17 +62,35 @@ function ruleSubject(group: RuleViolationGroup): string {
 export function ruleSentence(group: RuleViolationGroup): string {
   switch (group.kind) {
     case 'unique':
-      return `Duplicate values are no longer allowed for ${ruleSubject(group)} — ${group.count} ${group.count === 1 ? 'record shares' : 'records share'} a value.`;
+      return i18n.fill(i18n.chrome.ruleViolationsUniqueSentence, {
+        fields: ruleSubject(group),
+        count: group.count,
+      });
     case 'exclusive':
-      return `Records may no longer overlap in ${ruleSubject(group)} — ${group.count} ${group.count === 1 ? 'record overlaps' : 'records overlap'} another.`;
+      return i18n.fill(i18n.chrome.ruleViolationsExclusiveSentence, {
+        fields: ruleSubject(group),
+        count: group.count,
+      });
     case 'check':
       return group.message !== ''
-        ? `A new condition applies: ${group.message} — ${group.count} ${group.count === 1 ? 'record does' : 'records do'} not meet it.`
-        : `${group.count} ${group.count === 1 ? 'record does' : 'records do'} not meet a condition on ${ruleSubject(group)}.`;
+        ? i18n.fill(i18n.chrome.ruleViolationsCheckSentence, {
+            condition: group.message,
+            count: group.count,
+          })
+        : i18n.fill(i18n.chrome.ruleViolationsCheckFieldsSentence, {
+            fields: ruleSubject(group),
+            count: group.count,
+          });
     case 'required':
-      return `${ruleSubject(group)} is now a required field — ${group.count} ${group.count === 1 ? 'record has' : 'records have'} no value yet.`;
+      return i18n.fill(i18n.chrome.ruleViolationsRequiredSentence, {
+        field: ruleSubject(group),
+        count: group.count,
+      });
     case 'capacity':
-      return `At most ${group.limit} ${group.limit === 1 ? 'record' : 'records'} may be stored — ${group.count} ${group.count === 1 ? 'is' : 'are'} stored.`;
+      return i18n.fill(i18n.chrome.ruleViolationsCapacitySentence, {
+        limit: group.limit,
+        stored: group.count,
+      });
     default:
       throw new Error('Unknown rule violation kind');
   }
@@ -78,15 +99,23 @@ export function ruleSentence(group: RuleViolationGroup): string {
 export function ruleRecordSentence(group: RuleViolationGroup): string {
   switch (group.kind) {
     case 'unique':
-      return `This record shares its ${ruleSubject(group)} with another record.`;
+      return i18n.fill(i18n.chrome.ruleViolationsUniqueRecordSentence, {
+        subject: ruleSubject(group),
+      });
     case 'exclusive':
-      return `This record overlaps another record in ${ruleSubject(group)}.`;
+      return i18n.fill(i18n.chrome.ruleViolationsExclusiveRecordSentence, {
+        subject: ruleSubject(group),
+      });
     case 'check':
       return group.message !== ''
-        ? `This record does not meet this condition: ${group.message}`
-        : `This record does not meet a condition on ${ruleSubject(group)}.`;
+        ? i18n.fill(i18n.chrome.ruleViolationsCheckRecordSentence, { subject: group.message })
+        : i18n.fill(i18n.chrome.ruleViolationsCheckFieldsRecordSentence, {
+            fields: ruleSubject(group),
+          });
     case 'required':
-      return `This record has no ${ruleSubject(group)} yet.`;
+      return i18n.fill(i18n.chrome.ruleViolationsRequiredRecordSentence, {
+        subject: ruleSubject(group),
+      });
     case 'capacity':
       throw new Error('A breached record limit marks no individual record');
     default:
@@ -97,15 +126,15 @@ export function ruleRecordSentence(group: RuleViolationGroup): string {
 export function ruleConsequence(group: RuleViolationGroup): string {
   switch (group.kind) {
     case 'unique':
-      return "These records can't be saved again until the duplicates are resolved.";
+      return i18n.chrome.ruleViolationsUniqueConsequence;
     case 'exclusive':
-      return "These records can't be saved again until the overlap is resolved.";
+      return i18n.chrome.ruleViolationsExclusiveConsequence;
     case 'check':
-      return "These records can't be saved again until the condition is met.";
+      return i18n.chrome.ruleViolationsCheckConsequence;
     case 'required':
-      return "Until filled in, these records can't be saved, and anything calculated from the field treats it as empty.";
+      return i18n.chrome.ruleViolationsRequiredConsequence;
     case 'capacity':
-      return "New entries can't be added until the count is below the limit.";
+      return i18n.chrome.ruleViolationsCapacityConsequence;
     default:
       throw new Error('Unknown rule violation kind');
   }
@@ -143,8 +172,8 @@ export function rememberDismissal(collection: string, signature: string): void {
 const NO_ROWS = new Map<string, RuleViolationGroup[]>();
 
 function failureText(error: unknown): string {
-  const mapped = getErrorMessage(error, UNAVAILABLE);
-  return mapped === '' ? UNAVAILABLE : mapped;
+  const mapped = getErrorMessage(error, unavailable());
+  return mapped === '' ? unavailable() : mapped;
 }
 
 function markedRows(payload: RuleViolationPayload): Map<string, RuleViolationGroup[]> {
@@ -174,7 +203,7 @@ export function useRuleViolations(collection: string): TableRuleViolations {
 
   const reportUnavailable = useCallback((): void => {
     setPayload(null);
-    setFailure(UNAVAILABLE);
+    setFailure(unavailable());
   }, []);
 
   useEffect(() => {
@@ -187,7 +216,7 @@ export function useRuleViolations(collection: string): TableRuleViolations {
         }
         if (loaded === undefined) {
           setPayload(null);
-          setFailure(UNAVAILABLE);
+          setFailure(unavailable());
           return;
         }
         setPayload(loaded);

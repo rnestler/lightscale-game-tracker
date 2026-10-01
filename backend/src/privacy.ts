@@ -9,16 +9,31 @@ interface PrivacyColumn {
   identifier: string;
   reference: string | null;
   collection: boolean;
+  contained: boolean;
   personal: boolean;
   subject: boolean;
   scrub: unknown;
 }
 
+interface PrivacyChild {
+  identifier: string;
+  table: string;
+  foreignKey: string;
+  personal: boolean;
+}
+
 interface PrivacyTable {
   name: string;
   columns: PrivacyColumn[];
+  children: PrivacyChild[];
   identityStrong: string[];
   identityComposite: string[][];
+}
+
+interface InboundReference {
+  table: string;
+  column: string;
+  list: boolean;
 }
 
 interface PrivacyResource {
@@ -36,6 +51,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'id',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '[redacted]',
@@ -44,6 +60,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'name',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '[redacted]',
@@ -52,14 +69,16 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'category',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
-        scrub: 'chess',
+        scrub: '',
       },
       {
         identifier: 'rulesVariant',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '[redacted]',
@@ -68,6 +87,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'defaultRating',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -76,11 +96,13 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'description',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '[redacted]',
       },
     ],
+    children: [],
     identityStrong: [],
     identityComposite: [],
   },
@@ -91,6 +113,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'id',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '[redacted]',
@@ -99,6 +122,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'nickname',
         reference: null,
         collection: false,
+        contained: false,
         personal: true,
         subject: true,
         scrub: '[redacted]',
@@ -107,6 +131,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'fullName',
         reference: null,
         collection: false,
+        contained: false,
         personal: true,
         subject: false,
         scrub: '[redacted]',
@@ -115,14 +140,16 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'emailAddress',
         reference: null,
         collection: false,
+        contained: false,
         personal: true,
         subject: false,
-        scrub: '[redacted]',
+        scrub: '',
       },
       {
         identifier: 'avatar',
         reference: 'file',
         collection: false,
+        contained: false,
         personal: true,
         subject: false,
         scrub: '',
@@ -131,6 +158,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'bio',
         reference: null,
         collection: false,
+        contained: false,
         personal: true,
         subject: false,
         scrub: '[redacted]',
@@ -139,19 +167,22 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'joinedDate',
         reference: null,
         collection: false,
+        contained: false,
         personal: true,
         subject: false,
-        scrub: '1970-01-01',
+        scrub: null,
       },
       {
         identifier: 'userAccountId',
         reference: 'user',
         collection: false,
+        contained: false,
         personal: true,
         subject: false,
         scrub: '',
       },
     ],
+    children: [],
     identityStrong: ['emailAddress'],
     identityComposite: [],
   },
@@ -162,6 +193,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'id',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '[redacted]',
@@ -170,6 +202,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'playerId',
         reference: 'Player',
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '',
@@ -178,6 +211,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'gameId',
         reference: 'GameType',
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '',
@@ -186,6 +220,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'rating',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -194,6 +229,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'matchesPlayed',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -202,6 +238,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'wins',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -210,6 +247,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'losses',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -218,6 +256,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'draws',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -226,11 +265,13 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'lastPlayedAt',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
-        scrub: '1970-01-01T00:00:00.000Z',
+        scrub: null,
       },
     ],
+    children: [],
     identityStrong: [],
     identityComposite: [],
   },
@@ -241,6 +282,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'id',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '[redacted]',
@@ -249,6 +291,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'gameId',
         reference: 'GameType',
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '',
@@ -257,6 +300,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'playerOneId',
         reference: 'Player',
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '',
@@ -265,6 +309,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'playerTwoId',
         reference: 'Player',
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '',
@@ -273,30 +318,34 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'scheduledAt',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
-        scrub: '1970-01-01T00:00:00.000Z',
+        scrub: null,
       },
       {
         identifier: 'status',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
-        scrub: 'scheduled',
+        scrub: '',
       },
       {
         identifier: 'outcome',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
-        scrub: 'playerOneWin',
+        scrub: '',
       },
       {
         identifier: 'playerOneScore',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -305,6 +354,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'playerTwoScore',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -313,6 +363,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'playerOneRatingDelta',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -321,6 +372,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'playerTwoRatingDelta',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: 0,
@@ -329,6 +381,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'notes',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '[redacted]',
@@ -337,6 +390,7 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'recordedById',
         reference: 'user',
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
         scrub: '',
@@ -345,11 +399,13 @@ const PRIVACY_TABLES: PrivacyTable[] = [
         identifier: 'createdAt',
         reference: null,
         collection: false,
+        contained: false,
         personal: false,
         subject: false,
-        scrub: '1970-01-01T00:00:00.000Z',
+        scrub: null,
       },
     ],
+    children: [],
     identityStrong: [],
     identityComposite: [],
   },
@@ -359,13 +415,13 @@ const PRIVACY_RESOURCES: PrivacyResource[] = [
   {
     name: 'games',
     table: 'GameType',
-    ownershipTable: null,
+    ownershipTable: 'creator_games',
     ownershipIdColumn: 'gameTypeId',
   },
   {
     name: 'players',
     table: 'Player',
-    ownershipTable: null,
+    ownershipTable: 'creator_players',
     ownershipIdColumn: 'playerId',
   },
   {
@@ -377,10 +433,42 @@ const PRIVACY_RESOURCES: PrivacyResource[] = [
   {
     name: 'leaderboards',
     table: 'LeaderboardEntry',
-    ownershipTable: null,
+    ownershipTable: 'creator_leaderboards',
     ownershipIdColumn: 'leaderboardEntryId',
   },
 ];
+
+const INBOUND_REFERENCES: Record<string, InboundReference[] | undefined> = {
+  Player: [
+    {
+      table: 'LeaderboardEntry',
+      column: 'playerId',
+      list: false,
+    },
+    {
+      table: 'Match',
+      column: 'playerOneId',
+      list: false,
+    },
+    {
+      table: 'Match',
+      column: 'playerTwoId',
+      list: false,
+    },
+  ],
+  GameType: [
+    {
+      table: 'LeaderboardEntry',
+      column: 'gameId',
+      list: false,
+    },
+    {
+      table: 'Match',
+      column: 'gameId',
+      list: false,
+    },
+  ],
+};
 
 type Row = Record<string, unknown>;
 
@@ -412,6 +500,26 @@ export interface SubjectIndexEntry {
   userId: string | null;
 }
 
+interface Holding {
+  key: string;
+  personal: boolean;
+  single: boolean;
+  table: PrivacyTable;
+  records: Row[];
+}
+
+interface GrantGroup {
+  key: string;
+  table: PrivacyTable;
+}
+
+interface Inventory {
+  tables: PrivacyTable[];
+  rows: Map<string, Map<string, Row>>;
+}
+
+type Matched = Map<string, Set<string>>;
+
 function normalizeIdentity(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
@@ -438,28 +546,93 @@ export function identitySeed(input: {
   return { userId: input.userId, strongValues, attributes };
 }
 
+export async function verifiedAccountEmail(client: Queryable, userId: string): Promise<string> {
+  const { rows } = await client.query<Row>(
+    'SELECT email, "emailVerified" FROM "user" WHERE id = $1',
+    [userId]
+  );
+  const account = rows.at(0);
+  return account?.['emailVerified'] === true && typeof account['email'] === 'string'
+    ? account['email']
+    : '';
+}
+
 export async function seedForUser(client: Queryable, userId: string): Promise<SubjectSeed> {
-  const { rows } = await client.query<Row>('SELECT email FROM "user" WHERE id = $1', [userId]);
-  const email = typeof rows[0]?.['email'] === 'string' ? rows[0]['email'] : '';
+  const email = await verifiedAccountEmail(client, userId);
   return identitySeed({ userId, strongValues: email === '' ? [] : [email], attributes: {} });
 }
 
-function tableOf(name: string): PrivacyTable | undefined {
-  return PRIVACY_TABLES.find((table) => table.name === name);
+function recordId(record: Row): string {
+  const { id } = record;
+  return typeof id === 'string' ? id : '';
+}
+
+function text(record: Row, field: string): string {
+  const value = record[field];
+  return typeof value === 'string' ? value : '';
+}
+
+function tableOf(name: string): PrivacyTable {
+  const table = PRIVACY_TABLES.find((candidate) => candidate.name === name);
+  if (table === undefined) {
+    throw new Error(`Table "${name}" is missing from the privacy model`);
+  }
+  return table;
+}
+
+function isResourceTable(name: string): boolean {
+  return PRIVACY_RESOURCES.some((resource) => resource.table === name);
+}
+
+function recordTables(): PrivacyTable[] {
+  const tables: PrivacyTable[] = [];
+  const pending = PRIVACY_RESOURCES.map((resource) => resource.table);
+  let name = pending.pop();
+  while (name !== undefined) {
+    const table = tableOf(name);
+    if (!tables.includes(table)) {
+      tables.push(table);
+      for (const column of table.columns) {
+        if (column.contained && column.reference !== null) {
+          pending.push(column.reference);
+        }
+      }
+      for (const child of table.children) {
+        pending.push(child.table);
+      }
+    }
+    name = pending.pop();
+  }
+  return tables;
 }
 
 function personalColumns(table: PrivacyTable): PrivacyColumn[] {
   return table.columns.filter((column) => column.personal);
 }
 
+function idsOf(matched: Matched, table: string): Set<string> {
+  return matched.get(table) ?? new Set<string>();
+}
+
+function matchedIds(matched: Matched, table: string): Set<string> {
+  const existing = matched.get(table);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const ids = new Set<string>();
+  matched.set(table, ids);
+  return ids;
+}
+
 function referencedIds(record: Row, column: PrivacyColumn): string[] {
   const value = record[column.identifier];
-  if (column.collection) {
-    return Array.isArray(value)
-      ? value.filter((id): id is string => typeof id === 'string' && id !== '')
-      : [];
+  if (!column.collection) {
+    return typeof value === 'string' && value !== '' ? [value] : [];
   }
-  return typeof value === 'string' && value !== '' ? [value] : [];
+  if (!Array.isArray(value)) {
+    throw new Error(`Stored list "${column.identifier}" was not decoded into a list`);
+  }
+  return value.filter((id): id is string => typeof id === 'string' && id !== '');
 }
 
 function strongMatches(record: Row, table: PrivacyTable, seed: SubjectSeed): boolean {
@@ -485,20 +658,17 @@ function compositeMatches(record: Row, table: PrivacyTable, seed: SubjectSeed): 
 }
 
 function hasStrongValue(record: Row, strongFields: string[]): boolean {
-  return strongFields.some((field) => {
-    const value = record[field];
-    return typeof value === 'string' && value.trim() !== '';
-  });
+  return strongFields.some((field) => text(record, field).trim() !== '');
 }
 
 function compositeAttributes(record: Row, group: string[]): Record<string, string> | null {
   const attributes: Record<string, string> = {};
   for (const field of group) {
-    const value = record[field];
-    if (typeof value !== 'string' || value.trim() === '') {
+    const value = text(record, field).trim();
+    if (value === '') {
       return null;
     }
-    attributes[field] = value.trim();
+    attributes[field] = value;
   }
   return attributes;
 }
@@ -521,7 +691,7 @@ function isIdentityTable(name: string): boolean {
   if (name === USER_TABLE) {
     return true;
   }
-  const table = tableOf(name);
+  const table = PRIVACY_TABLES.find((candidate) => candidate.name === name);
   return (
     table !== undefined && (table.identityStrong.length > 0 || table.identityComposite.length > 0)
   );
@@ -529,10 +699,10 @@ function isIdentityTable(name: string): boolean {
 
 function subjectReferenceIds(
   seed: SubjectSeed,
-  subjectIds: Map<string, Set<string>>,
+  subjectIds: Matched,
   targetTable: string
 ): Set<string> {
-  const ids = new Set(subjectIds.get(targetTable) ?? []);
+  const ids = new Set(idsOf(subjectIds, targetTable));
   if (targetTable === USER_TABLE && seed.userId !== null && seed.userId !== '') {
     ids.add(seed.userId);
   }
@@ -543,7 +713,7 @@ function linksOtherIdentity(
   record: Row,
   table: PrivacyTable,
   seed: SubjectSeed,
-  subjectIds: Map<string, Set<string>>
+  subjectIds: Matched
 ): boolean {
   for (const column of table.columns) {
     const target = column.reference;
@@ -561,13 +731,10 @@ function linksOtherIdentity(
   return false;
 }
 
-function referencesMatched(
-  record: Row,
-  table: PrivacyTable,
-  matched: Map<string, Set<string>>
-): boolean {
+function referencesMatched(record: Row, table: PrivacyTable, matched: Matched): boolean {
   for (const column of table.columns) {
-    const set = column.reference === null ? undefined : matched.get(column.reference);
+    const set =
+      column.reference === null || column.contained ? undefined : matched.get(column.reference);
     if (set !== undefined && referencedIds(record, column).some((id) => set.has(id))) {
       return true;
     }
@@ -580,14 +747,54 @@ async function tableRows(client: Queryable, table: string): Promise<Row[]> {
   return rows;
 }
 
-async function loadAllRows(client: Queryable): Promise<Map<string, Row[]>> {
-  const rows = new Map<string, Row[]>();
-  for (const resource of PRIVACY_RESOURCES) {
-    if (!rows.has(resource.table)) {
-      rows.set(resource.table, await tableRows(client, resource.table));
+async function takeInventory(client: Queryable): Promise<Inventory> {
+  const inventory: Inventory = { tables: recordTables(), rows: new Map() };
+  for (const table of inventory.tables) {
+    const byId = new Map<string, Row>();
+    for (const row of await tableRows(client, table.name)) {
+      const id = recordId(row);
+      if (id !== '') {
+        byId.set(id, row);
+      }
+    }
+    inventory.rows.set(table.name, byId);
+  }
+  return inventory;
+}
+
+function rowsOf(inventory: Inventory, table: string): Row[] {
+  return [...(inventory.rows.get(table)?.values() ?? [])];
+}
+
+function findRow(inventory: Inventory, table: string, id: string): Row | null {
+  return inventory.rows.get(table)?.get(id) ?? null;
+}
+
+function holdings(inventory: Inventory, table: PrivacyTable, record: Row): Holding[] {
+  const held: Holding[] = [];
+  for (const column of table.columns) {
+    if (column.contained && column.reference !== null) {
+      const child = findRow(inventory, column.reference, text(record, column.identifier));
+      held.push({
+        key: column.identifier,
+        personal: column.personal,
+        single: true,
+        table: tableOf(column.reference),
+        records: child === null ? [] : [child],
+      });
     }
   }
-  return rows;
+  const id = recordId(record);
+  for (const child of table.children) {
+    held.push({
+      key: child.identifier,
+      personal: child.personal,
+      single: false,
+      table: tableOf(child.table),
+      records: rowsOf(inventory, child.table).filter((row) => text(row, child.foreignKey) === id),
+    });
+  }
+  return held;
 }
 
 async function ownedRecordIds(
@@ -602,105 +809,122 @@ async function ownedRecordIds(
     `SELECT "${resource.ownershipIdColumn}" AS "recordId" FROM "${resource.ownershipTable}" WHERE "userId" = $1`,
     [userId]
   );
-  return rows
-    .map((row) => row['recordId'])
-    .filter((id): id is string => typeof id === 'string' && id !== '');
+  return rows.map((row) => text(row, 'recordId')).filter((id) => id !== '');
 }
 
 async function seededTargets(
   client: Queryable,
-  seed: SubjectSeed,
-  rows: Map<string, Row[]>
-): Promise<Map<string, Set<string>>> {
-  const matched = new Map<string, Set<string>>();
+  inventory: Inventory,
+  seed: SubjectSeed
+): Promise<Matched> {
+  const matched: Matched = new Map();
   for (const resource of PRIVACY_RESOURCES) {
-    const table = tableOf(resource.table);
-    const ids = matched.get(resource.table) ?? new Set<string>();
+    const ids = matchedIds(matched, resource.table);
     if (seed.userId !== null && seed.userId !== '') {
       for (const id of await ownedRecordIds(client, resource, seed.userId)) {
         ids.add(id);
       }
     }
-    if (table !== undefined && table.identityStrong.length > 0) {
-      for (const record of rows.get(resource.table) ?? []) {
-        const { id } = record;
-        if (typeof id === 'string' && id !== '' && strongMatches(record, table, seed)) {
-          ids.add(id);
+  }
+  for (const table of inventory.tables) {
+    const ids = matchedIds(matched, table.name);
+    if (table.identityStrong.length > 0) {
+      for (const record of rowsOf(inventory, table.name)) {
+        if (strongMatches(record, table, seed)) {
+          ids.add(recordId(record));
         }
       }
     }
-    matched.set(resource.table, ids);
   }
   return matched;
 }
 
-function snapshotMatched(matched: Map<string, Set<string>>): Map<string, Set<string>> {
-  const snapshot = new Map<string, Set<string>>();
+function snapshotMatched(matched: Matched): Matched {
+  const snapshot: Matched = new Map();
   for (const [table, ids] of matched) {
     snapshot.set(table, new Set(ids));
   }
   return snapshot;
 }
 
-function expandReferenceReach(
-  matched: Map<string, Set<string>>,
-  seed: SubjectSeed,
-  rows: Map<string, Row[]>
-): void {
+function expandReferenceReach(inventory: Inventory, matched: Matched, seed: SubjectSeed): void {
   const subjectIds = snapshotMatched(matched);
-  for (const resource of PRIVACY_RESOURCES) {
-    const table = tableOf(resource.table);
-    const reached = matched.get(resource.table) ?? new Set<string>();
-    if (table !== undefined) {
-      for (const record of rows.get(resource.table) ?? []) {
-        const { id } = record;
-        const fresh = typeof id === 'string' && id !== '' && !reached.has(id);
-        if (
-          fresh &&
-          referencesMatched(record, table, subjectIds) &&
-          !identifiesDistinctSubject(record, table, seed) &&
-          !linksOtherIdentity(record, table, seed, subjectIds)
-        ) {
-          reached.add(id);
-        }
+  for (const table of inventory.tables) {
+    const reached = matchedIds(matched, table.name);
+    for (const record of rowsOf(inventory, table.name)) {
+      const id = recordId(record);
+      if (
+        !reached.has(id) &&
+        referencesMatched(record, table, subjectIds) &&
+        !identifiesDistinctSubject(record, table, seed) &&
+        !linksOtherIdentity(record, table, seed, subjectIds)
+      ) {
+        reached.add(id);
       }
     }
-    matched.set(resource.table, reached);
   }
 }
 
-function projectColumns(record: Row, columns: PrivacyColumn[]): Row {
+function personalFields(
+  inventory: Inventory,
+  matched: Matched,
+  table: PrivacyTable,
+  record: Row,
+  whole: boolean
+): Row | null {
+  const owned = whole || idsOf(matched, table.name).has(recordId(record));
   const fields: Row = {};
-  for (const column of columns) {
-    const value = record[column.identifier];
-    if (value !== undefined) {
-      fields[column.identifier] = value;
+  let found = whole;
+  for (const column of table.columns) {
+    if (!column.contained) {
+      const counted = whole ? column.identifier !== 'id' : owned && column.personal;
+      found ||= counted;
+      const value = record[column.identifier];
+      if (counted && value !== undefined) {
+        fields[column.identifier] = value;
+      }
     }
   }
-  return fields;
+  for (const holding of holdings(inventory, table, record)) {
+    const counted = whole || (owned && holding.personal);
+    found ||= counted;
+    const entries: Row[] = [];
+    for (const child of holding.records) {
+      const childFields = personalFields(inventory, matched, holding.table, child, counted);
+      if (childFields !== null) {
+        entries.push(childFields);
+      }
+    }
+    const held = holding.single
+      ? (entries[0] ?? null)
+      : counted || entries.length > 0
+        ? entries
+        : null;
+    if (held !== null) {
+      fields[holding.key] = held;
+      found = true;
+    }
+  }
+  return found ? fields : null;
 }
 
 function reportFromMatched(
-  matched: Map<string, Set<string>>,
-  rows: Map<string, Row[]>,
+  inventory: Inventory,
+  matched: Matched,
   userId: string
 ): PersonalDataReport {
   const resources: PersonalResourceReport[] = [];
   for (const resource of PRIVACY_RESOURCES) {
     const table = tableOf(resource.table);
-    const columns = table === undefined ? [] : personalColumns(table);
-    const ids = matched.get(resource.table) ?? new Set<string>();
-    if (columns.length > 0 && ids.size > 0) {
-      const records: PersonalRecord[] = [];
-      for (const record of rows.get(resource.table) ?? []) {
-        const { id } = record;
-        if (typeof id === 'string' && ids.has(id)) {
-          records.push({ id, fields: projectColumns(record, columns) });
-        }
+    const records: PersonalRecord[] = [];
+    for (const record of rowsOf(inventory, table.name)) {
+      const fields = personalFields(inventory, matched, table, record, false);
+      if (fields !== null) {
+        records.push({ id: recordId(record), fields });
       }
-      if (records.length > 0) {
-        resources.push({ resource: resource.name, records });
-      }
+    }
+    if (records.length > 0) {
+      resources.push({ resource: resource.name, records });
     }
   }
   return { userId, resources };
@@ -710,131 +934,127 @@ export async function buildReportForSeed(
   client: Queryable,
   seed: SubjectSeed
 ): Promise<PersonalDataReport> {
-  const rows = await loadAllRows(client);
-  const matched = await seededTargets(client, seed, rows);
-  expandReferenceReach(matched, seed, rows);
-  return reportFromMatched(matched, rows, seed.userId ?? '');
+  const inventory = await takeInventory(client);
+  const matched = await seededTargets(client, inventory, seed);
+  expandReferenceReach(inventory, matched, seed);
+  return reportFromMatched(inventory, matched, seed.userId ?? '');
 }
 
 export async function buildAdminReport(
   client: Queryable,
   seed: SubjectSeed
 ): Promise<PersonalDataReport> {
-  const rows = await loadAllRows(client);
-  const matched = await seededTargets(client, seed, rows);
-  for (const resource of PRIVACY_RESOURCES) {
-    const table = tableOf(resource.table);
-    if (table !== undefined) {
-      const ids = matched.get(resource.table) ?? new Set<string>();
-      for (const record of rows.get(resource.table) ?? []) {
-        const { id } = record;
-        if (typeof id === 'string' && id !== '' && compositeMatches(record, table, seed)) {
-          ids.add(id);
-        }
+  const inventory = await takeInventory(client);
+  const matched = await seededTargets(client, inventory, seed);
+  for (const table of inventory.tables) {
+    const ids = matchedIds(matched, table.name);
+    for (const record of rowsOf(inventory, table.name)) {
+      if (compositeMatches(record, table, seed)) {
+        ids.add(recordId(record));
       }
-      matched.set(resource.table, ids);
     }
   }
-  expandReferenceReach(matched, seed, rows);
-  return reportFromMatched(matched, rows, seed.userId ?? '');
+  expandReferenceReach(inventory, matched, seed);
+  return reportFromMatched(inventory, matched, seed.userId ?? '');
 }
 
 function subjectName(record: Row, table: PrivacyTable): string {
   for (const column of table.columns) {
-    if (column.subject) {
-      const value = record[column.identifier];
-      if (typeof value === 'string' && value.trim() !== '') {
-        return value.trim();
-      }
+    if (column.subject && text(record, column.identifier).trim() !== '') {
+      return text(record, column.identifier).trim();
     }
   }
   return '';
 }
 
+function indexRecord(
+  byKey: Map<string, SubjectIndexEntry>,
+  record: Row,
+  table: PrivacyTable
+): void {
+  for (const field of table.identityStrong) {
+    const raw = text(record, field).trim();
+    if (raw !== '' && !byKey.has(raw.toLowerCase())) {
+      byKey.set(raw.toLowerCase(), {
+        email: raw,
+        name: subjectName(record, table),
+        attributes: {},
+        userId: null,
+      });
+    }
+  }
+  if (hasStrongValue(record, table.identityStrong)) {
+    return;
+  }
+  for (const group of table.identityComposite) {
+    const attributes = compositeAttributes(record, group);
+    if (attributes !== null) {
+      const key = `composite:${group.map((field) => (attributes[field] ?? '').toLowerCase()).join('|')}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, { email: '', name: subjectName(record, table), attributes, userId: null });
+      }
+    }
+  }
+}
+
 export async function buildSubjectIndex(client: Queryable): Promise<SubjectIndexEntry[]> {
   const byKey = new Map<string, SubjectIndexEntry>();
   for (const user of await tableRows(client, USER_TABLE)) {
-    const email = typeof user['email'] === 'string' ? user['email'].trim() : '';
+    const email = text(user, 'email').trim();
     if (email !== '') {
       byKey.set(email.toLowerCase(), {
         email,
-        name: typeof user['name'] === 'string' ? user['name'] : '',
+        name: text(user, 'name'),
         attributes: {},
         userId: typeof user['id'] === 'string' ? user['id'] : null,
       });
     }
   }
-  for (const resource of PRIVACY_RESOURCES) {
-    const table = tableOf(resource.table);
-    if (
-      table !== undefined &&
-      (table.identityStrong.length > 0 || table.identityComposite.length > 0)
-    ) {
-      for (const record of await tableRows(client, resource.table)) {
-        for (const field of table.identityStrong) {
-          const raw = record[field];
-          if (
-            typeof raw === 'string' &&
-            raw.trim() !== '' &&
-            !byKey.has(raw.trim().toLowerCase())
-          ) {
-            byKey.set(raw.trim().toLowerCase(), {
-              email: raw.trim(),
-              name: subjectName(record, table),
-              attributes: {},
-              userId: null,
-            });
-          }
-        }
-        if (!hasStrongValue(record, table.identityStrong)) {
-          for (const group of table.identityComposite) {
-            const attributes = compositeAttributes(record, group);
-            if (attributes !== null) {
-              const key = `composite:${group.map((field) => (attributes[field] ?? '').toLowerCase()).join('|')}`;
-              if (!byKey.has(key)) {
-                byKey.set(key, {
-                  email: '',
-                  name: subjectName(record, table),
-                  attributes,
-                  userId: null,
-                });
-              }
-            }
-          }
-        }
+  for (const table of recordTables()) {
+    if (table.identityStrong.length > 0 || table.identityComposite.length > 0) {
+      for (const record of await tableRows(client, table.name)) {
+        indexRecord(byKey, record, table);
       }
     }
   }
   return [...byKey.values()];
 }
 
+function grantGroups(inventory: Inventory): GrantGroup[] {
+  const groups: GrantGroup[] = PRIVACY_RESOURCES.map((resource) => ({
+    key: resource.name,
+    table: tableOf(resource.table),
+  }));
+  for (const table of inventory.tables) {
+    if (!isResourceTable(table.name)) {
+      groups.push({ key: table.name, table });
+    }
+  }
+  return groups;
+}
+
 export async function findCompositeCandidates(
   client: Queryable,
   seed: SubjectSeed
 ): Promise<PersonalResourceReport[]> {
-  const rows = await loadAllRows(client);
-  const seeded = await seededTargets(client, seed, rows);
+  const inventory = await takeInventory(client);
+  const seeded = await seededTargets(client, inventory, seed);
   const candidates: PersonalResourceReport[] = [];
-  for (const resource of PRIVACY_RESOURCES) {
-    const table = tableOf(resource.table);
-    if (table !== undefined) {
-      const columns = personalColumns(table);
-      const already = seeded.get(resource.table) ?? new Set<string>();
-      const records: PersonalRecord[] = [];
-      for (const record of rows.get(resource.table) ?? []) {
-        const { id } = record;
-        if (
-          typeof id === 'string' &&
-          id !== '' &&
-          !already.has(id) &&
-          compositeMatches(record, table, seed)
-        ) {
-          records.push({ id, fields: projectColumns(record, columns) });
-        }
+  for (const group of grantGroups(inventory)) {
+    const already = idsOf(seeded, group.table.name);
+    const records: PersonalRecord[] = [];
+    for (const record of rowsOf(inventory, group.table.name)) {
+      const id = recordId(record);
+      if (!already.has(id) && compositeMatches(record, group.table, seed)) {
+        const candidate: Matched = new Map([[group.table.name, new Set([id])]]);
+        records.push({
+          id,
+          fields: personalFields(inventory, candidate, group.table, record, false) ?? {},
+        });
       }
-      if (records.length > 0) {
-        candidates.push({ resource: resource.name, records });
-      }
+    }
+    if (records.length > 0) {
+      candidates.push({ resource: group.key, records });
     }
   }
   return candidates;
@@ -844,21 +1064,41 @@ function fileColumns(columns: PrivacyColumn[]): PrivacyColumn[] {
   return columns.filter((column) => column.reference === FILE_ELEMENT);
 }
 
-function collectFileIds(
-  records: Row[],
-  ids: Set<string>,
-  columns: PrivacyColumn[],
-  files: Set<string>
+function collectHeld(
+  inventory: Inventory,
+  table: PrivacyTable,
+  record: Row,
+  personalOnly: boolean,
+  files: Set<string>,
+  removed: Matched
 ): void {
-  const uploads = fileColumns(columns);
-  for (const record of records) {
-    const { id } = record;
-    if (typeof id === 'string' && ids.has(id)) {
-      for (const column of uploads) {
-        for (const fileId of referencedIds(record, column)) {
-          files.add(fileId);
-        }
+  for (const column of fileColumns(personalOnly ? personalColumns(table) : table.columns)) {
+    for (const fileId of referencedIds(record, column)) {
+      files.add(fileId);
+    }
+  }
+  for (const holding of holdings(inventory, table, record)) {
+    if (!personalOnly || holding.personal) {
+      for (const child of holding.records) {
+        matchedIds(removed, holding.table.name).add(recordId(child));
+        collectHeld(inventory, holding.table, child, false, files, removed);
       }
+    }
+  }
+}
+
+function collectErased(
+  inventory: Inventory,
+  table: PrivacyTable,
+  ids: Set<string>,
+  personalOnly: boolean,
+  files: Set<string>,
+  removed: Matched
+): void {
+  for (const id of ids) {
+    const record = findRow(inventory, table.name, id);
+    if (record !== null) {
+      collectHeld(inventory, table, record, personalOnly, files, removed);
     }
   }
 }
@@ -906,15 +1146,14 @@ function quotedIdentifier(identifier: string): string {
 
 async function anonymizeRecords(
   client: Queryable,
-  resource: PrivacyResource,
+  table: PrivacyTable,
   ids: Set<string>
 ): Promise<void> {
   if (ids.size === 0) {
     return;
   }
-  const table = tableOf(resource.table);
-  const columns = table === undefined ? [] : personalColumns(table);
-  const backups = await backupColumnsOf(client, resource.table);
+  const columns = personalColumns(table);
+  const backups = await backupColumnsOf(client, table.name);
   if (columns.length === 0 && backups.length === 0) {
     return;
   }
@@ -924,40 +1163,84 @@ async function anonymizeRecords(
   ].join(', ');
   const values = columns.map((column) => column.scrub);
   for (const id of ids) {
-    await client.query(`UPDATE "${resource.table}" SET ${assignments} WHERE id = $1`, [
-      id,
-      ...values,
-    ]);
+    await client.query(`UPDATE "${table.name}" SET ${assignments} WHERE id = $1`, [id, ...values]);
   }
 }
 
-async function deleteRecords(
+async function clearInboundReferences(
   client: Queryable,
-  resource: PrivacyResource,
-  ids: Set<string>,
-  userId: string | null
+  table: string,
+  ids: string[]
 ): Promise<void> {
-  for (const id of ids) {
-    await client.query(`DELETE FROM "${resource.table}" WHERE id = $1`, [id]);
+  if (ids.length === 0) {
+    return;
   }
-  if (resource.ownershipTable !== null && userId !== null && userId !== '') {
-    await client.query(`DELETE FROM "${resource.ownershipTable}" WHERE "userId" = $1`, [userId]);
+  for (const reference of INBOUND_REFERENCES[table] ?? []) {
+    await client.query(
+      reference.list
+        ? `DELETE FROM "${reference.table}" WHERE "${reference.column}" = ANY($1)`
+        : `UPDATE "${reference.table}" SET "${reference.column}" = '' WHERE "${reference.column}" = ANY($1)`,
+      [ids]
+    );
   }
 }
 
-function mergeGranted(matched: Map<string, Set<string>>, granted: Map<string, Set<string>>): void {
+async function deleteRows(client: Queryable, table: PrivacyTable, ids: Set<string>): Promise<void> {
+  for (const id of ids) {
+    await client.query(`DELETE FROM "${table.name}" WHERE id = $1`, [id]);
+  }
+  await clearInboundReferences(client, table.name, [...ids]);
+}
+
+async function removeContainedRecords(
+  client: Queryable,
+  inventory: Inventory,
+  removed: Matched
+): Promise<void> {
+  for (const table of inventory.tables) {
+    const gone = idsOf(removed, table.name);
+    for (const record of rowsOf(inventory, table.name)) {
+      const id = recordId(record);
+      for (const column of table.columns) {
+        if (
+          column.contained &&
+          column.reference !== null &&
+          !gone.has(id) &&
+          idsOf(removed, column.reference).has(text(record, column.identifier))
+        ) {
+          await client.query(
+            `UPDATE "${table.name}" SET "${column.identifier}" = '' WHERE id = $1`,
+            [id]
+          );
+        }
+      }
+    }
+  }
+  for (const [name, ids] of removed) {
+    await deleteRows(client, tableOf(name), ids);
+  }
+}
+
+async function deleteOwnership(client: Queryable, userId: string): Promise<void> {
   for (const resource of PRIVACY_RESOURCES) {
-    const ids = matched.get(resource.table) ?? new Set<string>();
-    for (const id of granted.get(resource.name) ?? []) {
+    if (resource.ownershipTable !== null) {
+      await client.query(`DELETE FROM "${resource.ownershipTable}" WHERE "userId" = $1`, [userId]);
+    }
+  }
+}
+
+function mergeGranted(inventory: Inventory, matched: Matched, granted: Matched): void {
+  for (const group of grantGroups(inventory)) {
+    const ids = matchedIds(matched, group.table.name);
+    for (const id of granted.get(group.key) ?? []) {
       ids.add(id);
     }
-    matched.set(resource.table, ids);
   }
 }
 
-function referenceOnlyIds(reached: Set<string> | undefined, subjectIds: Set<string>): Set<string> {
+function referenceOnlyIds(reached: Set<string>, subjectIds: Set<string>): Set<string> {
   const ids = new Set<string>();
-  for (const id of reached ?? []) {
+  for (const id of reached) {
     if (!subjectIds.has(id)) {
       ids.add(id);
     }
@@ -972,28 +1255,40 @@ export async function eraseIdentitySubject(
   resolution: 'anonymize' | 'delete'
 ): Promise<void> {
   await client.query('SET CONSTRAINTS ALL DEFERRED');
-  const rows = await loadAllRows(client);
-  const subject = await seededTargets(client, seed, rows);
-  mergeGranted(subject, granted);
+  const inventory = await takeInventory(client);
+  const subject = await seededTargets(client, inventory, seed);
+  mergeGranted(inventory, subject, granted);
   const withReach = snapshotMatched(subject);
-  expandReferenceReach(withReach, seed, rows);
+  expandReferenceReach(inventory, withReach, seed);
   const files = new Set<string>();
-  for (const resource of PRIVACY_RESOURCES) {
-    const table = tableOf(resource.table);
-    const subjectIds = subject.get(resource.table) ?? new Set<string>();
-    const referencing = referenceOnlyIds(withReach.get(resource.table), subjectIds);
-    if (table !== undefined) {
-      const records = rows.get(resource.table) ?? [];
-      const cleared = resolution === 'anonymize' ? personalColumns(table) : table.columns;
-      collectFileIds(records, subjectIds, cleared, files);
-      collectFileIds(records, referencing, personalColumns(table), files);
+  const removed: Matched = new Map();
+  for (const table of inventory.tables) {
+    const subjectIds = idsOf(subject, table.name);
+    collectErased(inventory, table, subjectIds, resolution === 'anonymize', files, removed);
+    if (resolution === 'delete' && !isResourceTable(table.name)) {
+      for (const id of subjectIds) {
+        matchedIds(removed, table.name).add(id);
+      }
     }
+    const referencing = referenceOnlyIds(idsOf(withReach, table.name), subjectIds);
+    collectErased(inventory, table, referencing, true, files, removed);
+  }
+  await removeContainedRecords(client, inventory, removed);
+  for (const table of inventory.tables) {
+    const subjectIds = idsOf(subject, table.name);
     if (resolution === 'anonymize') {
-      await anonymizeRecords(client, resource, subjectIds);
-    } else {
-      await deleteRecords(client, resource, subjectIds, seed.userId);
+      await anonymizeRecords(client, table, subjectIds);
+    } else if (isResourceTable(table.name)) {
+      await deleteRows(client, table, subjectIds);
     }
-    await anonymizeRecords(client, resource, referencing);
+    await anonymizeRecords(
+      client,
+      table,
+      referenceOnlyIds(idsOf(withReach, table.name), subjectIds)
+    );
+  }
+  if (resolution === 'delete' && seed.userId !== null && seed.userId !== '') {
+    await deleteOwnership(client, seed.userId);
   }
   await deleteUnreferencedFiles(client, files);
 }

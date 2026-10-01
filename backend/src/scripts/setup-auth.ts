@@ -1,4 +1,5 @@
 import { config } from 'dotenv';
+import { randomBytes } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,30 +65,41 @@ async function requireAuthSchema(): Promise<void> {
   }
 }
 
+function adminPassword(): string {
+  const configured = (process.env.ADMIN_PASSWORD ?? '').trim();
+  return configured.length === 0 ? randomBytes(18).toString('base64url') : configured;
+}
+
 async function createAdminUser(email: string, name: string): Promise<UserRow> {
-  const password = process.env.ADMIN_PASSWORD ?? '';
-  if (password.trim().length === 0) {
-    throw new Error(
-      `No account exists for ${email} yet and ADMIN_PASSWORD in .env is empty. Set ADMIN_PASSWORD and run npm run setup:auth again.`
-    );
-  }
+  const password = adminPassword();
   await getSignUpEmailFunction()({ body: { email, password, name }, headers: new Headers() });
   const user = await loadUserByEmail(email);
   if (user === null) {
     throw new Error('Admin user creation failed');
   }
+  await pool.query('UPDATE "user" SET "emailVerified" = true WHERE id = $1', [user.id]);
   console.log(`Administrator account created: ${email}`);
   console.log(`Password: ${password}`);
   console.log('Store this password now: It is removed from .env and not shown again.');
   return user;
 }
 
-async function existingAdminUser(email: string): Promise<UserRow | null> {
+async function administratorExists(email: string): Promise<boolean> {
   const user = await loadUserByEmail(email);
-  if (user !== null) {
-    console.log(`Administrator account ${email} already exists; its password is unchanged.`);
+  if (user === null) {
+    return false;
   }
-  return user;
+  const adminRole = await pool.query(
+    'SELECT 1 FROM "app_user_role" WHERE "userId" = $1 AND "roleId" = $2',
+    [user.id, 'admin']
+  );
+  if (adminRole.rows.length === 0) {
+    throw new Error(
+      `An account for ${email} already exists and is not the administrator. Delete that account or choose another ADMIN_EMAIL, then run npm run setup:auth again.`
+    );
+  }
+  console.log(`Administrator account ${email} already exists; its password is unchanged.`);
+  return true;
 }
 
 async function forgetAdminPassword(): Promise<void> {
@@ -98,17 +110,17 @@ async function forgetAdminPassword(): Promise<void> {
 async function ensureAdminUser(): Promise<void> {
   const adminEmail = requireEnvironmentValue('ADMIN_EMAIL');
   const adminName = requireEnvironmentValue('ADMIN_NAME');
-  const user =
-    (await existingAdminUser(adminEmail)) ?? (await createAdminUser(adminEmail, adminName));
   const adminRoleResult = await pool.query('SELECT id FROM "app_role" WHERE id = $1', ['admin']);
   if (adminRoleResult.rows.length !== 1) {
     throw new Error('Role "admin" not found in app_role table');
   }
-  await pool.query(
-    'INSERT INTO "app_user_role" ("userId", "roleId") VALUES ($1, $2) ON CONFLICT ("userId", "roleId") DO NOTHING',
-    [user.id, 'admin']
-  );
-  await pool.query('UPDATE "user" SET "emailVerified" = true WHERE id = $1', [user.id]);
+  if (!(await administratorExists(adminEmail))) {
+    const user = await createAdminUser(adminEmail, adminName);
+    await pool.query('INSERT INTO "app_user_role" ("userId", "roleId") VALUES ($1, $2)', [
+      user.id,
+      'admin',
+    ]);
+  }
   await forgetAdminPassword();
 }
 

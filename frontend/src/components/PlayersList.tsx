@@ -1,4 +1,5 @@
-import { Fragment, useState, useEffect, type JSX } from 'react';
+import { i18n } from '../i18n/text';
+import { Fragment, useState, useEffect, type JSX, type ComponentProps } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { usePlayers } from '../hooks/usePlayers';
 import { usePermissions, canReadField } from '../hooks/usePermissions';
@@ -13,17 +14,25 @@ import {
   ChevronRightIcon,
   PencilIcon,
   PlusIcon,
+  RotateCcwIcon,
   SearchIcon,
+  SearchXIcon,
   SlidersHorizontalIcon,
   Trash2Icon,
   UserIcon,
+  XIcon,
 } from 'lucide-react';
-import { getStoredHiddenColumns, setStoredHiddenColumns } from '../api/pagination';
+import {
+  getStoredHiddenColumns,
+  isLastShownColumn,
+  setStoredHiddenColumns,
+} from '../api/pagination';
 import { apiBaseUrl } from '../config/apiConfig';
 import { useRuleViolations } from '../hooks/useRuleViolations';
 import { RuleViolationMarker, RuleViolationsBanner } from './RuleViolationsNotice';
 import { RecordChip } from '../components/ui/record-chip';
 import { onNavigationTo } from '../utils/recordNavigation';
+import { isOwnClick } from '../utils/ownClick';
 import { useUsers } from '../hooks/useUsers';
 import { SelectCards } from './ui/card-select';
 import { SkeletonCardGrid } from './ui/skeleton';
@@ -41,11 +50,13 @@ function cycleSort(state: SortState, key: string): SortState {
 }
 
 export function PlayersList(_props: { onNavigate?: (view: string) => void }): JSX.Element {
+  const { permissions } = usePermissions();
   const {
     players,
     isInitializing: playersInitializing,
     reloadPlayers,
     deletePlayer,
+    isBusy: playersBusy,
     errorMessage: playersError,
     total: playersTotal,
     hasMore: playersHasMore,
@@ -53,7 +64,6 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
     loadMore: loadMorePlayers,
     loadAll: loadAllPlayers,
   } = usePlayers({ paged: true, pageSize: 24 });
-  const { permissions } = usePermissions();
   const { userLabel } = useUsers();
   const playersRuleViolations = useRuleViolations('players');
   const [playersRuleFilter, setPlayersRuleFilter] = useState(false);
@@ -116,16 +126,24 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
   const playersPageCount = Math.max(1, Math.ceil(sortedPlayers.length / 24));
   const playersPageSafe = Math.min(playersPage, playersPageCount - 1);
   const pagedPlayers = sortedPlayers.slice(playersPageSafe * 24, playersPageSafe * 24 + 24);
-  const playersColumnLabels: readonly string[] = [
-    'Avatar',
-    'Nickname / Handle',
-    'Full Name',
-    'Member Since',
-    'Email Address',
-    'Linked User',
+  const playersColumnKeys: readonly string[] = [
+    'avatar',
+    'nickname',
+    'fullName',
+    'joinedDate',
+    'emailAddress',
+    'userAccount',
+  ];
+  const playersReadableColumns: readonly boolean[] = [
+    canReadField(permissions, 'players', 'avatar'),
+    canReadField(permissions, 'players', 'nickname'),
+    canReadField(permissions, 'players', 'fullName'),
+    canReadField(permissions, 'players', 'joinedDate'),
+    canReadField(permissions, 'players', 'emailAddress'),
+    canReadField(permissions, 'players', 'userAccountId'),
   ];
   const [playersHiddenColumns, setPlayersHiddenColumns] = useState<Set<number>>(() =>
-    getStoredHiddenColumns('players', playersColumnLabels, [4, 5])
+    getStoredHiddenColumns('players', playersColumnKeys, [4, 5])
   );
   function filterPlayersRuleViolations(only: boolean): void {
     if (only !== playersRuleFilter) {
@@ -146,7 +164,9 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
   }
   const [editingPlayers, setEditingPlayers] = useState<$Domain.Player | null>(null);
   const [editingSelected, setEditingSelected] = useState<$Domain.Player | null>(null);
-  const [creatingPlayers, setCreatingPlayers] = useState(false);
+  const [creatingPlayers, setCreatingPlayers] = useState<NonNullable<
+    ComponentProps<typeof PlayerEditDialog>['defaults']
+  > | null>(null);
   const [deleteConfirmPlayer, setDeleteConfirmPlayer] = useState<{
     id: string;
     label: string;
@@ -161,11 +181,11 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
         <div className="flex flex-col gap-4 p-4 @md:p-8" data-ls="76860a865a">
           {!(permissions?.['players']?.read ?? false) ? (
             <div
-              className="flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
+              className="overflow-x-auto flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
               data-ls="21f182aaf7"
             >
-              <span className="break-words text-muted-foreground" data-ls="498592f143">
-                {"You don't have permission to view this content."}
+              <span className="min-w-min text-muted-foreground" data-ls="498592f143">
+                {i18n.chrome.noPermission}
               </span>
             </div>
           ) : null}
@@ -175,30 +195,89 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                 className="flex flex-row items-center gap-3 min-w-0 flex-wrap [&>*]:max-w-full py-1"
                 data-ls="0bc8cb7c95"
               >
-                {playersMatches.length === 1 ? (
-                  <span
-                    className="break-words text-sm text-muted-foreground shrink-0"
-                    data-ls="1a7023222b"
-                  >{`${playersMatches.length} player`}</span>
+                {!(playersMatches.length < playersTotal) ? (
+                  <Fragment>
+                    {playersMatches.length === 1 ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="0a2360f5a7"
+                      >
+                        {i18n.fill(
+                          `{count} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('Player') })}`,
+                          { count: playersMatches.length }
+                        )}
+                      </span>
+                    ) : null}
+                    {!(playersMatches.length === 1) ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="f93e77cf4d"
+                      >
+                        {i18n.fill(
+                          `{count} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('Player', 1) })}`,
+                          { count: playersMatches.length }
+                        )}
+                      </span>
+                    ) : null}
+                  </Fragment>
                 ) : null}
-                {!(playersMatches.length === 1) ? (
-                  <span
-                    className="break-words text-sm text-muted-foreground shrink-0"
-                    data-ls="9fac85de10"
-                  >{`${playersMatches.length} players`}</span>
+                {playersMatches.length < playersTotal ? (
+                  <Fragment>
+                    {playersTotal === 1 ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="8cb40e2743"
+                      >
+                        {i18n.fill(
+                          `${i18n.chrome.countOfTotal} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('Player') })}`,
+                          { shown: playersMatches.length, total: playersTotal }
+                        )}
+                      </span>
+                    ) : null}
+                    {!(playersTotal === 1) ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="0ace02c124"
+                      >
+                        {i18n.fill(
+                          `${i18n.chrome.countOfTotal} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('Player', 1) })}`,
+                          { shown: playersMatches.length, total: playersTotal }
+                        )}
+                      </span>
+                    ) : null}
+                  </Fragment>
                 ) : null}
-                <div className="flex-1" data-ls="f93e77cf4d" />
-                <div className="relative min-w-[12rem] flex-1" data-ls="4a0ca977d3">
+                <div className="flex-1" data-ls="e4870ddd8a" />
+                <div className="relative min-w-[12rem] flex-1" data-ls="728a583fc1">
                   <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input
                     value={playersQuery}
                     onChange={(event) => {
                       setPlayersQuery(event.target.value);
                     }}
-                    placeholder="Search…"
-                    aria-label="Search players by name"
-                    className="h-10 w-full rounded-md border border-border bg-transparent pl-9 pr-3 text-sm focus:border-primary focus:outline-none"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape' && playersQuery !== '') {
+                        event.preventDefault();
+                        setPlayersQuery('');
+                      }
+                    }}
+                    placeholder={i18n.chrome.search}
+                    aria-label={i18n.fill(i18n.chrome.searchLabel, { name: i18n.word('players') })}
+                    className={`h-10 w-full rounded-md border pl-9 pr-9 text-sm transition-colors focus:border-primary focus:outline-none ${playersQuery === '' ? 'border-border bg-transparent' : 'border-primary bg-primary/5'}`}
                   />
+                  {playersQuery !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlayersQuery('');
+                      }}
+                      aria-label={i18n.chrome.clearSearch}
+                      title={i18n.chrome.clearSearch}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
                 {(permissions?.['players']?.create ?? false) && (
                   <button
@@ -206,87 +285,99 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                     data-ls="a9e5e52677"
                     className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
                     onClick={() => {
-                      setCreatingPlayers(true);
+                      setCreatingPlayers({});
                     }}
                   >
                     <PlusIcon className="h-4 w-4" />
-                    {'Add player'}
+                    {i18n.fill(i18n.chrome.addItem, { name: i18n.word('Player') })}
                   </button>
                 )}
               </div>
               {playersError !== null ? (
                 <div
-                  className="flex flex-col p-3 rounded-md border border-border bg-secondary"
-                  data-ls="8cb40e2743"
+                  className="flex flex-col overflow-x-auto p-3 rounded-md border border-border bg-secondary"
+                  data-ls="f499a18df1"
                 >
-                  <span className="break-words text-sm" data-ls="ec35dc4e51">
+                  <span className="min-w-min text-sm" data-ls="214c690f29">
                     {playersError}
                   </span>
                 </div>
               ) : null}
-              {playersInitializing ? <SkeletonCardGrid data-ls="e4870ddd8a" /> : null}
+              {playersInitializing ? <SkeletonCardGrid data-ls="b61a023348" /> : null}
               {playersTotal === 0 && !playersInitializing && !(playersError !== null) ? (
                 <div
-                  className="flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
-                  data-ls="5777beccb4"
+                  className="overflow-x-auto flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
+                  data-ls="9f59de559d"
                 >
                   <UserIcon
                     className="shrink-0 h-8 w-8 text-muted-foreground"
-                    data-ls="f499a18df1"
+                    data-ls="b6762fd6d0"
                   />
-                  <span className="break-words text-base font-medium" data-ls="214c690f29">
-                    {'No players yet'}
+                  <span className="min-w-min text-base font-medium" data-ls="718bb78e57">
+                    {i18n.fill(i18n.chrome.noEntriesTitle, { name: i18n.word('players') })}
                   </span>
                   {(permissions?.['players']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="b61a023348"
-                    >
-                      {'Get started by adding your first player.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="abae130867">
+                      {i18n.fill(i18n.chrome.noEntriesGetStarted, { name: i18n.word('Player') })}
                     </span>
                   ) : null}
                   {(permissions?.['players']?.create ?? false) && (
                     <button
                       type="button"
-                      data-ls="9103c89ccd"
+                      data-ls="4375587474"
                       className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
                       onClick={() => {
-                        setCreatingPlayers(true);
+                        setCreatingPlayers({});
                       }}
                     >
                       <PlusIcon className="h-4 w-4" />
-                      {'Add player'}
+                      {i18n.fill(i18n.chrome.addItem, { name: i18n.word('Player') })}
                     </button>
                   )}
                 </div>
               ) : null}
-              {playersMatches.length === 0 && !(playersTotal === 0) ? (
+              {playersMatches.length === 0 && !(playersTotal === 0) && playersBusy ? (
+                <SkeletonCardGrid data-ls="f4be65fe99" />
+              ) : null}
+              {playersMatches.length === 0 && !(playersTotal === 0) && !playersBusy ? (
                 <div
-                  className="flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
-                  data-ls="b6762fd6d0"
+                  className="overflow-x-auto flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
+                  data-ls="212b85c413"
                 >
+                  <SearchXIcon
+                    className="shrink-0 h-8 w-8 text-muted-foreground"
+                    data-ls="e330ae1265"
+                  />
+                  <span className="min-w-min text-base font-medium" data-ls="305481eeb5">
+                    {i18n.chrome.noMatches}
+                  </span>
                   {(permissions?.['players']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="e1626a26de"
-                    >
-                      {'Try adjusting your search or add a new player.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="09e73fe043">
+                      {i18n.fill(i18n.chrome.noEntriesSearchCreate, { name: i18n.word('Player') })}
                     </span>
                   ) : null}
                   {!(permissions?.['players']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="4375587474"
-                    >
-                      {'Try adjusting your search.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="6e48cf8e6b">
+                      {i18n.chrome.noEntriesSearch}
                     </span>
                   ) : null}
+                  <button
+                    type="button"
+                    data-ls="976bc577b1"
+                    className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                    onClick={() => {
+                      setPlayersQuery('');
+                    }}
+                  >
+                    <RotateCcwIcon className="h-4 w-4" />
+                    {i18n.chrome.showAll}
+                  </button>
                 </div>
               ) : null}
               {playersMatches.length > 0 ? (
                 <div
                   className="ui-table-surface flex flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden"
-                  data-ls="f4be65fe99"
+                  data-ls="4a85cf3312"
                 >
                   <div className="flex flex-col gap-2">
                     <RuleViolationsBanner
@@ -428,7 +519,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                       setPlayersSort(cycleSort(playersSort, 'emailAddress'));
                                     }}
                                   >
-                                    {'Email Address'}
+                                    {i18n.word('Player.emailAddress')}
                                     <span aria-hidden="true">
                                       {playersSort?.key === 'emailAddress'
                                         ? playersSort.dir === 'asc'
@@ -460,7 +551,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                       setPlayersSort(cycleSort(playersSort, 'userAccount'));
                                     }}
                                   >
-                                    {'Linked User'}
+                                    {i18n.word('Player.userAccount')}
                                     <span aria-hidden="true">
                                       {playersSort?.key === 'userAccount'
                                         ? playersSort.dir === 'asc'
@@ -481,7 +572,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                     <button
                                       type="button"
                                       className="h-8 px-1.5 inline-flex items-center gap-1.5 rounded-md text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                                      aria-label={'Toggle columns'}
+                                      aria-label={i18n.chrome.toggleColumns}
                                     >
                                       <SlidersHorizontalIcon className="h-4 w-4" />
                                     </button>
@@ -498,6 +589,11 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!playersHiddenColumns.has(0)}
+                                            disabled={isLastShownColumn(
+                                              playersHiddenColumns,
+                                              playersReadableColumns,
+                                              0
+                                            )}
                                             onChange={() => {
                                               const next = new Set(playersHiddenColumns);
                                               if (next.has(0)) {
@@ -507,7 +603,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'players',
-                                                playersColumnLabels,
+                                                playersColumnKeys,
                                                 next
                                               );
                                               setPlayersHiddenColumns(next);
@@ -522,6 +618,11 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!playersHiddenColumns.has(1)}
+                                            disabled={isLastShownColumn(
+                                              playersHiddenColumns,
+                                              playersReadableColumns,
+                                              1
+                                            )}
                                             onChange={() => {
                                               const next = new Set(playersHiddenColumns);
                                               if (next.has(1)) {
@@ -531,7 +632,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'players',
-                                                playersColumnLabels,
+                                                playersColumnKeys,
                                                 next
                                               );
                                               setPlayersHiddenColumns(next);
@@ -546,6 +647,11 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!playersHiddenColumns.has(2)}
+                                            disabled={isLastShownColumn(
+                                              playersHiddenColumns,
+                                              playersReadableColumns,
+                                              2
+                                            )}
                                             onChange={() => {
                                               const next = new Set(playersHiddenColumns);
                                               if (next.has(2)) {
@@ -555,7 +661,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'players',
-                                                playersColumnLabels,
+                                                playersColumnKeys,
                                                 next
                                               );
                                               setPlayersHiddenColumns(next);
@@ -570,6 +676,11 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!playersHiddenColumns.has(3)}
+                                            disabled={isLastShownColumn(
+                                              playersHiddenColumns,
+                                              playersReadableColumns,
+                                              3
+                                            )}
                                             onChange={() => {
                                               const next = new Set(playersHiddenColumns);
                                               if (next.has(3)) {
@@ -579,7 +690,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'players',
-                                                playersColumnLabels,
+                                                playersColumnKeys,
                                                 next
                                               );
                                               setPlayersHiddenColumns(next);
@@ -594,6 +705,11 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!playersHiddenColumns.has(4)}
+                                            disabled={isLastShownColumn(
+                                              playersHiddenColumns,
+                                              playersReadableColumns,
+                                              4
+                                            )}
                                             onChange={() => {
                                               const next = new Set(playersHiddenColumns);
                                               if (next.has(4)) {
@@ -603,13 +719,13 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'players',
-                                                playersColumnLabels,
+                                                playersColumnKeys,
                                                 next
                                               );
                                               setPlayersHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Email Address'}</span>
+                                          <span>{i18n.word('Player.emailAddress')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'players', 'userAccountId') && (
@@ -618,6 +734,11 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!playersHiddenColumns.has(5)}
+                                            disabled={isLastShownColumn(
+                                              playersHiddenColumns,
+                                              playersReadableColumns,
+                                              5
+                                            )}
                                             onChange={() => {
                                               const next = new Set(playersHiddenColumns);
                                               if (next.has(5)) {
@@ -627,13 +748,13 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'players',
-                                                playersColumnLabels,
+                                                playersColumnKeys,
                                                 next
                                               );
                                               setPlayersHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Linked User'}</span>
+                                          <span>{i18n.word('Player.userAccount')}</span>
                                         </label>
                                       )}
                                     </Popover.Content>
@@ -651,15 +772,19 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                 className="px-4 py-8 text-center text-muted-foreground"
                                 role="status"
                               >
-                                {players.length === 0 ? 'No data yet' : 'No matches'}
+                                {players.length === 0
+                                  ? i18n.chrome.noDataYet
+                                  : i18n.chrome.noMatches}
                               </td>
                             </tr>
                           )}
                           {pagedPlayers.map((item) => (
                             <tr
                               key={item.id}
-                              onClick={() => {
-                                setSelectedId(item.id);
+                              onClick={(clickEvent) => {
+                                if (isOwnClick(clickEvent)) {
+                                  setSelectedId(item.id);
+                                }
                               }}
                               className="group/row border-b border-border/50 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer"
                             >
@@ -689,8 +814,8 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                           <a
                                             href={`${apiBaseUrl}/api/files/${item.avatar.id}/download?v=${encodeURIComponent(item.avatar.fileName)}`}
                                             download
-                                            className="break-words text-sm"
-                                            data-ls="e330ae1265"
+                                            className="min-w-min text-sm"
+                                            data-ls="cfff4c4350"
                                           >
                                             {item.avatar.fileName}
                                           </a>
@@ -708,8 +833,8 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                       <RecordChip
                                         label={String(item.nickname)}
                                         icon={<UserIcon className="h-3.5 w-3.5" />}
-                                        className="break-words text-sm"
-                                        data-ls="26e7cef1ee"
+                                        className="min-w-min text-sm"
+                                        data-ls="9a4d95366f"
                                       />
                                     </div>
                                   </td>
@@ -721,7 +846,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                     data-label={'Full Name'}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="c087a8e143">
+                                      <span className="min-w-min text-sm" data-ls="1d88fb694a">
                                         {item.fullName}
                                       </span>
                                     </div>
@@ -735,13 +860,13 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       <span
-                                        className="whitespace-nowrap text-sm"
-                                        data-ls="976bc577b1"
+                                        className="shrink-0 whitespace-nowrap text-sm"
+                                        data-ls="65e6a2c91a"
                                       >
                                         {item.joinedDate
                                           ? new Date(
                                               `${item.joinedDate}T00:00:00`
-                                            ).toLocaleDateString('en')
+                                            ).toLocaleDateString(i18n.locale)
                                           : ''}
                                       </span>
                                     </div>
@@ -751,14 +876,14 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'players', 'emailAddress') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Email Address'}
+                                    data-label={i18n.word('Player.emailAddress')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       {item.emailAddress && (
                                         <a
                                           href={`mailto:${item.emailAddress}`}
-                                          className="break-words text-sm"
-                                          data-ls="4a85cf3312"
+                                          className="min-w-0 break-all text-sm"
+                                          data-ls="dfb2747e9c"
                                         >
                                           {item.emailAddress}
                                         </a>
@@ -770,26 +895,37 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'players', 'userAccountId') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Linked User'}
+                                    data-label={i18n.word('Player.userAccount')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       {item.userAccountId ? (
                                         <RecordChip
                                           label={userLabel(item.userAccountId)}
                                           initials
-                                          className="break-words text-sm"
-                                          data-ls="8a2505f98f"
+                                          className="min-w-min text-sm"
+                                          data-ls="b815586719"
                                         />
                                       ) : null}
                                     </div>
                                   </td>
                                 )}
-                              <td className="w-px px-3 py-2 text-right align-middle whitespace-nowrap opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity">
+                              <td
+                                className={
+                                  item._sample
+                                    ? 'w-px px-3 py-2 text-right align-middle whitespace-nowrap'
+                                    : 'w-px px-3 py-2 text-right align-middle whitespace-nowrap opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity'
+                                }
+                              >
                                 <div className="inline-flex items-center gap-1">
+                                  {item._sample && (
+                                    <span className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+                                      {i18n.chrome.sampleRecord}
+                                    </span>
+                                  )}
                                   {(permissions?.['players']?.update ?? false) && (
                                     <button
                                       type="button"
-                                      aria-label={'Edit'}
+                                      aria-label={i18n.chrome.edit}
                                       onClick={(clickEvent) => {
                                         clickEvent.stopPropagation();
                                         setEditingPlayers(item);
@@ -802,7 +938,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                                   {(permissions?.['players']?.delete ?? false) && (
                                     <button
                                       type="button"
-                                      aria-label={'Delete'}
+                                      aria-label={i18n.chrome.delete}
                                       onClick={(clickEvent) => {
                                         clickEvent.stopPropagation();
                                         runWithToast(
@@ -824,11 +960,16 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                       </table>
                       {(playersPageCount > 1 || playersHasMore) && (
                         <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border text-sm text-muted-foreground print:hidden">
-                          <span>{`Page ${playersPageSafe + 1} of ${playersPageCount}`}</span>
+                          <span>
+                            {i18n.fill(i18n.chrome.pageIndicator, {
+                              page: playersPageSafe + 1,
+                              count: playersPageCount,
+                            })}
+                          </span>
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              aria-label={'Previous page'}
+                              aria-label={i18n.chrome.previousPage}
                               onClick={() => {
                                 setPlayersPage(Math.max(0, playersPageSafe - 1));
                               }}
@@ -839,7 +980,7 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
                             </button>
                             <button
                               type="button"
-                              aria-label={'Next page'}
+                              aria-label={i18n.chrome.nextPage}
                               onClick={() => {
                                 if (playersPageSafe >= playersPageCount - 1 && playersHasMore) {
                                   runWithToast(
@@ -922,23 +1063,26 @@ export function PlayersList(_props: { onNavigate?: (view: string) => void }): JS
         }}
       />
       <PlayerEditDialog
-        open={creatingPlayers}
+        open={creatingPlayers !== null}
         editing={null}
         isBusy={false}
+        defaults={creatingPlayers ?? {}}
         onSaved={() => {
           playersRuleViolations.reload();
         }}
         onClose={() => {
-          setCreatingPlayers(false);
+          setCreatingPlayers(null);
           runWithToast(reloadPlayers());
         }}
       />
       <ConfirmDeleteDialog
         open={deleteConfirmPlayer !== null}
-        title="Delete player"
-        description={`Are you sure you want to delete "${deleteConfirmPlayer?.label ?? ''}"? This action cannot be undone.`}
-        cancelLabel="Cancel"
-        deleteLabel="Delete"
+        title={i18n.fill(i18n.chrome.deleteTitle, { name: i18n.word('Player') })}
+        description={i18n.fill(i18n.chrome.deleteConfirm, {
+          item: deleteConfirmPlayer?.label ?? '',
+        })}
+        cancelLabel={i18n.chrome.cancel}
+        deleteLabel={i18n.chrome.delete}
         onCancel={() => {
           setDeleteConfirmPlayer(null);
         }}

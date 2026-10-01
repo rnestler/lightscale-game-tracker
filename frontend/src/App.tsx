@@ -1,7 +1,10 @@
+import { i18n } from './i18n/text';
 import type { JSX } from 'react';
-import { Component, lazy, Suspense, useEffect, useState } from 'react';
+import { Component, lazy, Suspense, useLayoutEffect, useSyncExternalStore } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { usePermissions } from './hooks/usePermissions';
+import { useClippedTitles } from './hooks/useClippedTitles';
+import { adoptPath, isAuthRoute, replacePath, returnAfterSignIn } from './utils/recordNavigation';
 import { AwaitingApproval } from './components/AwaitingApproval';
 
 const RELOAD_GUARD_KEY = 'ls-route-reloaded';
@@ -63,20 +66,19 @@ function normalizePath(pathname: string): AppRoute {
   return '/app';
 }
 
+function subscribePath(onChange: () => void): () => void {
+  window.addEventListener('popstate', onChange);
+  return (): void => {
+    window.removeEventListener('popstate', onChange);
+  };
+}
+
+function currentRoute(): AppRoute {
+  return normalizePath(window.location.pathname);
+}
+
 function usePathname(): AppRoute {
-  const [path, setPath] = useState<AppRoute>(() => normalizePath(window.location.pathname));
-
-  useEffect(() => {
-    const onChange = (): void => {
-      setPath(normalizePath(window.location.pathname));
-    };
-    window.addEventListener('popstate', onChange);
-    return (): void => {
-      window.removeEventListener('popstate', onChange);
-    };
-  }, []);
-
-  return path;
+  return useSyncExternalStore(subscribePath, currentRoute);
 }
 
 function RouteFallback({ message }: { message: string }): JSX.Element {
@@ -87,7 +89,7 @@ function RouteFallback({ message }: { message: string }): JSX.Element {
           <span className="app-boot-glow" />
           <img className="app-boot-logo" src="assets/leaderboard-logo.png" alt="" />
         </div>
-        <p className="app-boot-title">{'GameRank Tracker'}</p>
+        <p className="app-boot-title">{i18n.word("'GameRank Tracker'")}</p>
         <p className="app-boot-message">{message}</p>
         <span className="app-boot-track" />
       </div>
@@ -104,18 +106,9 @@ function RouteFallback({ message }: { message: string }): JSX.Element {
   );
 }
 
-function sameOriginReturn(returnTo: string | null): string {
-  if (returnTo === null || !URL.canParse(returnTo, window.location.origin)) {
-    return '/';
-  }
-  const target = new URL(returnTo, window.location.origin);
-  const leavesOrigin = target.origin !== window.location.origin || target.pathname.startsWith('//');
-  return leavesOrigin ? '/' : `${target.pathname}${target.search}${target.hash}`;
-}
-
 function RouteRedirect({ to, message }: { to: string; message: string }): JSX.Element {
-  useEffect(() => {
-    window.location.href = to;
+  useLayoutEffect(() => {
+    replacePath(to);
   }, [to]);
   return <RouteFallback message={message} />;
 }
@@ -125,11 +118,11 @@ function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
   const { isLoading: permissionsLoading, hasAppAccess } = usePermissions();
 
   if (authLoading || permissionsLoading) {
-    return <RouteFallback message={'Loading…'} />;
+    return <RouteFallback message={i18n.chrome.loading} />;
   }
 
   if (!isAuthenticated) {
-    return <RouteRedirect to="/login" message={'Redirecting…'} />;
+    return <RouteRedirect to="/login" message={i18n.chrome.redirecting} />;
   }
 
   if (!hasAppAccess) {
@@ -140,37 +133,27 @@ function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
 }
 
 function AppRoutes(): JSX.Element {
-  const pathname = usePathname();
+  const visitedPath = usePathname();
   const { isAuthenticated, isLoading } = useAuth();
-  const isAuthRoute =
-    pathname === '/login' ||
-    pathname === '/register' ||
-    pathname === '/forgot-password' ||
-    pathname === '/reset-password' ||
-    pathname === '/verify-email';
-  const redirectsWhenAuthenticated = pathname === '/login' || pathname === '/register';
-
-  useEffect(() => {
-    if (redirectsWhenAuthenticated && isAuthenticated) {
-      window.location.href = sameOriginReturn(
-        new URLSearchParams(window.location.search).get('returnTo')
-      );
-    }
-  }, [redirectsWhenAuthenticated, isAuthenticated]);
+  const signedInReturn =
+    (visitedPath === '/login' || visitedPath === '/register') && isAuthenticated
+      ? returnAfterSignIn()
+      : null;
+  const pathname = signedInReturn === null ? visitedPath : normalizePath(adoptPath(signedInReturn));
 
   if (pathname === '/privacy') {
     return (
       <GuestPrivacyInquiry
-        appTitle={'GameRank Tracker'}
+        appTitle={i18n.word("'GameRank Tracker'")}
         logoUrl={'assets/leaderboard-logo.png'}
         backgroundUrl={'/assets/club-background.png'}
       />
     );
   }
 
-  if (isAuthRoute) {
-    if (isLoading || (redirectsWhenAuthenticated && isAuthenticated)) {
-      return <RouteFallback message={'Loading…'} />;
+  if (isAuthRoute(pathname)) {
+    if (isLoading) {
+      return <RouteFallback message={i18n.chrome.loading} />;
     }
     const mode =
       pathname === '/register'
@@ -208,7 +191,7 @@ class RouteBoundary extends Component<{ children: JSX.Element }, { failed: boole
     }
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background text-foreground">
-        <div className="text-sm text-muted-foreground">{'This page could not be loaded.'}</div>
+        <div className="text-sm text-muted-foreground">{i18n.chrome.loadFailed}</div>
         <button
           type="button"
           className="rounded-[var(--radius-md)] border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
@@ -217,7 +200,7 @@ class RouteBoundary extends Component<{ children: JSX.Element }, { failed: boole
             window.location.reload();
           }}
         >
-          {'Reload'}
+          {i18n.chrome.reloadAction}
         </button>
       </div>
     );
@@ -225,9 +208,11 @@ class RouteBoundary extends Component<{ children: JSX.Element }, { failed: boole
 }
 
 export function App(): JSX.Element {
+  useClippedTitles();
+
   return (
     <RouteBoundary>
-      <Suspense fallback={<RouteFallback message={'Loading…'} />}>
+      <Suspense fallback={<RouteFallback message={i18n.chrome.loading} />}>
         <AppRoutes />
       </Suspense>
     </RouteBoundary>

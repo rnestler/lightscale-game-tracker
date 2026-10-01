@@ -17,10 +17,11 @@ import {
 } from '../authorization.js';
 import { withTransaction } from '../transaction.js';
 import { deleteUserAccount, eraseIdentitySubject, seedForUser } from '../privacy.js';
-import { auth, sendInvitationEmail, COOKIE_PREFIX } from '../auth.js';
+import { auth, invitationTokenDigest, sendInvitationEmail, COOKIE_PREFIX } from '../auth.js';
 import { publicLink } from '../public-address.js';
+import { isEmailAddress } from '../validation.js';
 import { RESOURCE_PERMISSIONS, TRANSACTION_CALL_ROLES } from '../access-policy.js';
-import type { PermissionEntry } from '../access-policy.js';
+import type { PermissionEntry, PermissionScope } from '../access-policy.js';
 import { collectRuleViolations, renderableKinds } from '../rule-violations.js';
 
 const ALL_ROLES = [
@@ -31,10 +32,7 @@ const ALL_ROLES = [
   { id: 'scorekeeper', name: 'scorekeeper', isPredefined: false },
 ];
 
-function grantsRole(
-  permission: { all: string[]; own: string[] } | undefined,
-  userRoles: string[]
-): boolean {
+function grantsRole(permission: PermissionScope | undefined, userRoles: string[]): boolean {
   if (!permission) {
     return false;
   }
@@ -80,11 +78,13 @@ function computePermissions(userRoles: string[]): Record<string, ResourceGrants>
       for (const transactionName of Object.keys(perms.call ?? {})) {
         call[transactionName] = admin || grantsRole(perms.call?.[transactionName], userRoles);
       }
+      const grants = (scope: PermissionScope | undefined): boolean =>
+        admin || (perms.individual ? hasAppAccess(userRoles) : grantsRole(scope, userRoles));
       result[resourceName] = {
-        read: admin || grantsRole(perms.read, userRoles),
-        create: !perms.uncreatable && (admin || grantsRole(perms.create, userRoles)),
-        update: admin || grantsRole(perms.update, userRoles),
-        delete: admin || grantsRole(perms.delete, userRoles),
+        read: grants(perms.read),
+        create: !perms.uncreatable && grants(perms.create),
+        update: grants(perms.update),
+        delete: grants(perms.delete),
         call,
         readFields: fieldList(readableFieldSet(resourceName, userRoles)),
         createFields: fieldList(creatableFieldSet(resourceName, userRoles)),
@@ -343,6 +343,12 @@ adminRouter.delete('/account', async (request, response) => {
     });
     return;
   }
+  if (Date.now() - new Date(session.session.createdAt).getTime() > 600000) {
+    response
+      .status(403)
+      .json({ error: 'Sign in again to delete your account', code: 'RECENT_SIGN_IN_REQUIRED' });
+    return;
+  }
   const userId = session.user.id;
   await withTransaction<void>(pool, async (client): Promise<void> => {
     await eraseIdentitySubject(client, await seedForUser(client, userId), new Map(), 'delete');
@@ -493,7 +499,7 @@ adminRouter.get('/invitation/:token', async (request, response) => {
   const { token } = request.params;
   const { rows } = await pool.query<{ email: string }>(
     'SELECT email FROM "app_invitation" WHERE token = $1 AND "expiresAt" > NOW() LIMIT 1',
-    [token]
+    [invitationTokenDigest(token)]
   );
   const row = rows.at(0);
   if (row === undefined) {
@@ -510,8 +516,8 @@ adminRouter.post('/admin/users/invite', async (request, response) => {
   }
   const { email, roleId } = request.body as { email?: string; roleId?: string };
   const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  if (normalizedEmail === '') {
-    response.status(400).json({ error: 'Email is required', code: 'EMAIL_REQUIRED' });
+  if (!isEmailAddress(normalizedEmail)) {
+    response.status(400).json({ error: 'A valid email is required', code: 'EMAIL_REQUIRED' });
     return;
   }
   const role = typeof roleId === 'string' ? roleId : '';
@@ -543,7 +549,7 @@ adminRouter.post('/admin/users/invite', async (request, response) => {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   await pool.query(
     'INSERT INTO "app_invitation" ("id", "email", "roleId", "token", "expiresAt", "invitedBy") VALUES ($1, $2, $3, $4, $5, $6)',
-    [id, normalizedEmail, role, token, expiresAt, session.user.id]
+    [id, normalizedEmail, role, invitationTokenDigest(token), expiresAt, session.user.id]
   );
   await sendInvitationEmail(normalizedEmail, invitationLink(token));
   response.json({
@@ -586,8 +592,8 @@ adminRouter.post('/admin/invitations/:id/resend', async (request, response) => {
   if (!(await requireAdmin(request, response))) {
     return;
   }
-  const { rows } = await pool.query<{ email: string; token: string }>(
-    'SELECT email, token FROM "app_invitation" WHERE id = $1 LIMIT 1',
+  const { rows } = await pool.query<{ email: string }>(
+    'SELECT email FROM "app_invitation" WHERE id = $1 LIMIT 1',
     [request.params.id]
   );
   const row = rows.at(0);
@@ -595,7 +601,12 @@ adminRouter.post('/admin/invitations/:id/resend', async (request, response) => {
     response.status(404).json({ error: 'Invitation not found', code: 'INVITATION_NOT_FOUND' });
     return;
   }
-  await sendInvitationEmail(row.email, invitationLink(row.token));
+  const token = randomBytes(32).toString('base64url');
+  await pool.query('UPDATE "app_invitation" SET token = $1 WHERE id = $2', [
+    invitationTokenDigest(token),
+    request.params.id,
+  ]);
+  await sendInvitationEmail(row.email, invitationLink(token));
   response.json({ success: true });
 });
 
@@ -656,6 +667,7 @@ const INFRASTRUCTURE_TABLES = new Set<string>([
   'app_config',
   'app_invitation',
   'schema_migrations',
+  'schema_shape',
   'user',
   'session',
   'account',
@@ -665,7 +677,10 @@ const INFRASTRUCTURE_TABLES = new Set<string>([
   'app_user_profile',
   'app_user_profile_owner',
   'app_privacy_inquiry',
+  'creator_games',
+  'creator_players',
   'creator_matches',
+  'creator_leaderboards',
 ]);
 
 const STALE_BACKUP_PREFIX = '$OLD_';

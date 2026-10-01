@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { JSX, ReactNode } from 'react';
+import { isOwnClick } from '../../utils/ownClick';
 
 export const CardSelectContext = createContext<{
   selectedId: string | null;
@@ -33,7 +34,7 @@ export function SelectCard({
         }
       }}
       onClick={(event) => {
-        if (!(event.target as HTMLElement).closest('button, a, input, select, textarea')) {
+        if (isOwnClick(event)) {
           onSelect(id);
         }
       }}

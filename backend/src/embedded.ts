@@ -1,12 +1,28 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import { UploadRefusedError } from './file-inspection.js';
+import { enrichRow, stageFiles, storeStagedFiles } from './files.js';
+import type { StagedFile } from './files.js';
 
 export interface EmbeddedFieldSpec {
   key: string;
   table: string;
   columns: string[];
   temporalColumns: string[];
+  fileFields: string[];
   embedded: EmbeddedFieldSpec[];
+}
+
+type Row = Record<string, unknown>;
+
+export interface RecordWrites {
+  insert(client: PoolClient, type: string, row: Row): Promise<void>;
+  update(client: PoolClient, type: string, id: string, change: Row): Promise<void>;
+  unreadableFile(
+    body: Row,
+    fileFields: string[],
+    loadKept: () => Promise<Row | null>
+  ): Promise<boolean>;
 }
 
 function storedColumnValue(spec: EmbeddedFieldSpec, name: string, value: unknown): unknown {
@@ -16,74 +32,94 @@ function storedColumnValue(spec: EmbeddedFieldSpec, name: string, value: unknown
   return value ?? '';
 }
 
+function isRecordValue(value: unknown): value is Row {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function storedId(row: Row | null, key: string): string | null {
+  const id = row?.[key];
+  return typeof id === 'string' && id !== '' ? id : null;
+}
+
+async function storedEmbeddedRow(
+  client: PoolClient,
+  spec: EmbeddedFieldSpec,
+  existingId: string | null
+): Promise<Row | null> {
+  if (existingId === null) {
+    return null;
+  }
+  const columnList = spec.columns.map((name) => `"${name}"`).join(', ');
+  const found = await client.query<Row>(
+    `SELECT id, ${columnList} FROM "${spec.table}" WHERE id = $1`,
+    [existingId]
+  );
+  return found.rows.at(0) ?? null;
+}
+
+async function storeAttachedFiles(
+  client: PoolClient,
+  spec: EmbeddedFieldSpec,
+  values: Row,
+  existingRow: Row | null,
+  writes: RecordWrites
+): Promise<void> {
+  if (spec.fileFields.length === 0) {
+    return;
+  }
+  if (await writes.unreadableFile(values, spec.fileFields, () => Promise.resolve(existingRow))) {
+    throw new UploadRefusedError(404, 'FILE_NOT_FOUND', 'File not found');
+  }
+  const staged: StagedFile[] = [];
+  stageFiles(values, spec.fileFields, staged);
+  await storeStagedFiles(client, staged);
+}
+
 async function upsertEmbeddedRow(
   client: PoolClient,
   spec: EmbeddedFieldSpec,
-  values: Record<string, unknown>,
-  existingId: string | null
+  values: Row,
+  existingId: string | null,
+  writes: RecordWrites
 ): Promise<string> {
-  const columnList = spec.columns.map((name) => `"${name}"`).join(', ');
-  let existingRow: Record<string, unknown> | null = null;
-  let resolvedId: string | null = null;
-  if (existingId !== null && existingId !== '') {
-    const found = await client.query<Record<string, unknown>>(
-      `SELECT id, ${columnList} FROM "${spec.table}" WHERE id = $1`,
-      [existingId]
-    );
-    if (found.rows.length > 0) {
-      existingRow = found.rows[0];
-      resolvedId = existingId;
-    }
-  }
+  const existingRow = await storedEmbeddedRow(client, spec, existingId);
   const target = values;
+  await storeAttachedFiles(client, spec, target, existingRow, writes);
   for (const childSpec of spec.embedded) {
-    const raw = target[childSpec.key];
-    const childValues =
-      raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-    const childExistingId =
-      existingRow !== null && typeof existingRow[childSpec.key] === 'string'
-        ? (existingRow[childSpec.key] as string)
-        : null;
-    target[childSpec.key] = await upsertEmbeddedRow(
-      client,
-      childSpec,
-      childValues,
-      childExistingId
-    );
+    const child = target[childSpec.key];
+    const childId = storedId(existingRow, childSpec.key);
+    target[childSpec.key] = isRecordValue(child)
+      ? await upsertEmbeddedRow(client, childSpec, child, childId, writes)
+      : (childId ?? '');
   }
-  const columnValues = spec.columns.map((name) => storedColumnValue(spec, name, values[name]));
-  if (resolvedId !== null) {
-    const setClause = spec.columns.map((name, index) => `"${name}" = $${index + 2}`).join(', ');
-    await client.query(`UPDATE "${spec.table}" SET ${setClause} WHERE id = $1`, [
-      resolvedId,
-      ...columnValues,
-    ]);
-    return resolvedId;
+  const columns: Row = {};
+  for (const name of spec.columns) {
+    columns[name] = storedColumnValue(spec, name, target[name]);
+  }
+  if (existingRow !== null) {
+    const id = String(existingRow['id']);
+    await writes.update(client, spec.table, id, columns);
+    return id;
   }
   const id = randomUUID();
-  const placeholders = spec.columns.map((_, index) => `$${index + 2}`).join(', ');
-  await client.query(
-    `INSERT INTO "${spec.table}" (id, ${columnList}) VALUES ($1, ${placeholders})`,
-    [id, ...columnValues]
-  );
+  await writes.insert(client, spec.table, { id, ...columns });
   return id;
 }
 
 export async function processEmbedded(
   client: PoolClient,
-  body: Record<string, unknown>,
+  body: Row,
   specs: EmbeddedFieldSpec[],
-  existingParentRow: Record<string, unknown> | null
+  existingParentRow: Row | null,
+  writes: RecordWrites
 ): Promise<void> {
   const target = body;
-  for (const spec of specs.filter((candidate) => target[candidate.key] !== undefined)) {
-    const raw = target[spec.key];
-    const values = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-    const existingId =
-      existingParentRow !== null && typeof existingParentRow[spec.key] === 'string'
-        ? (existingParentRow[spec.key] as string)
-        : null;
-    target[spec.key] = await upsertEmbeddedRow(client, spec, values, existingId);
+  for (const spec of specs) {
+    const values = target[spec.key];
+    if (isRecordValue(values)) {
+      const existingId = storedId(existingParentRow, spec.key);
+      target[spec.key] = await upsertEmbeddedRow(client, spec, values, existingId, writes);
+    }
   }
 }
 
@@ -110,6 +146,20 @@ export async function deleteEmbedded(
   }
 }
 
+async function enrichFileFields(
+  rows: Array<Record<string, unknown>>,
+  spec: EmbeddedFieldSpec
+): Promise<Array<Record<string, unknown>>> {
+  if (spec.fileFields.length === 0) {
+    return rows;
+  }
+  const enriched: Array<Record<string, unknown>> = [];
+  for (const row of rows) {
+    enriched.push(await enrichRow(row, spec.fileFields));
+  }
+  return enriched;
+}
+
 export async function enrichEmbeddedRows(
   pool: Pool,
   rows: Array<Record<string, unknown>>,
@@ -134,7 +184,10 @@ export async function enrichEmbeddedRows(
         `SELECT id, ${columnList} FROM "${spec.table}" WHERE id = ANY($1)`,
         [ids]
       );
-      enrichedChildren = await enrichEmbeddedRows(pool, found.rows, spec.embedded);
+      enrichedChildren = await enrichFileFields(
+        await enrichEmbeddedRows(pool, found.rows, spec.embedded),
+        spec
+      );
     }
     const enrichedById = new Map(enrichedChildren.map((child) => [child['id'] as string, child]));
     for (const row of results) {

@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowRight, ShieldAlert } from 'lucide-react';
@@ -17,11 +18,13 @@ const REACHABLE_VIEWS = new Set<string>([
   'players',
 ]);
 
-const UNAVAILABLE = 'The records could not be checked just now. Please try again later.';
+function unavailable(): string {
+  return i18n.chrome.ruleViolationsUnavailable;
+}
 
 function failureText(error: unknown): string {
-  const mapped = getErrorMessage(error, UNAVAILABLE);
-  return mapped === '' ? UNAVAILABLE : mapped;
+  const mapped = getErrorMessage(error, unavailable());
+  return mapped === '' ? unavailable() : mapped;
 }
 
 function chipClasses(group: RuleViolationGroup): string {
@@ -69,21 +72,19 @@ export function RuleViolationsView({
 
   return (
     <div className="px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 lg:py-8 xl:py-10">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto w-full min-w-0 max-w-3xl">
         <div className="flex items-center gap-2.5">
           <ShieldAlert className="h-5 w-5 ui-warning-text" />
           <h1 className="ui-display text-2xl font-semibold tracking-tight" data-ls="23cee10733">
-            {'Rule violations'}
+            {i18n.chrome.ruleViolationsTitle}
           </h1>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
-          {
-            'Existing records that conflict with rules added later. New entries are already checked; resolve these records to fully enforce the rules. Only visible to admins.'
-          }
+          {i18n.chrome.ruleViolationsDescription}
         </p>
         {loaded && groups.length === 0 && (
           <p className="mt-10 rounded-xl border border-dashed border-border bg-card px-6 py-12 text-center text-sm text-muted-foreground">
-            {failure !== '' ? failure : 'No rule violations.'}
+            {failure !== '' ? failure : i18n.chrome.ruleViolationsEmpty}
           </p>
         )}
         {groups.length > 0 && (
@@ -111,7 +112,9 @@ export function RuleViolationsView({
                       onNavigate(group.label);
                     }}
                   >
-                    {`Show in ${recordPlural(group.table)}`}
+                    {i18n.fill(i18n.chrome.ruleViolationsShowIn, {
+                      table: recordPlural(group.table),
+                    })}
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 )}

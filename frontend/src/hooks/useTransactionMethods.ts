@@ -1,6 +1,8 @@
+import { i18n } from '../i18n/text';
 import { useCallback, useState } from 'react';
 import type * as $Domain from '../types/domain';
 import { transactionMethodsApi } from '../api/transactionMethodsApi';
+import { referenceStore } from '../api/referenceStore';
 import { fireAndForget, getErrorMessage } from '../utils/errorHandling';
 import { toast } from '../utils/toast';
 
@@ -15,23 +17,25 @@ export function useStartMatchTransaction(): UseStartMatchTransactionReturn {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const execute = useCallback((match: $Domain.Match, afterSuccess: () => void): void => {
-    const run = async (): Promise<void> => {
-      setIsBusy(true);
-      setErrorMessage(null);
-      try {
-        await transactionMethodsApi.startMatch(match);
-      } catch (error) {
-        const message = getErrorMessage(error);
-        setErrorMessage(message);
-        toast(message, 'error');
-        return;
-      } finally {
-        setIsBusy(false);
-      }
-      afterSuccess();
-      toast('Done', 'success');
-    };
-    fireAndForget(run());
+    fireAndForget(
+      (async (): Promise<void> => {
+        setIsBusy(true);
+        setErrorMessage(null);
+        try {
+          await transactionMethodsApi.startMatch(match);
+        } catch (error) {
+          const message = getErrorMessage(error);
+          setErrorMessage(message);
+          toast(message, 'error');
+          return;
+        } finally {
+          setIsBusy(false);
+        }
+        referenceStore.invalidate();
+        afterSuccess();
+        toast(i18n.chrome.done, 'success');
+      })()
+    );
   }, []);
 
   return { execute, isBusy, errorMessage };
@@ -48,23 +52,25 @@ export function useDisputeMatchTransaction(): UseDisputeMatchTransactionReturn {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const execute = useCallback((match: $Domain.Match, afterSuccess: () => void): void => {
-    const run = async (): Promise<void> => {
-      setIsBusy(true);
-      setErrorMessage(null);
-      try {
-        await transactionMethodsApi.disputeMatch(match);
-      } catch (error) {
-        const message = getErrorMessage(error);
-        setErrorMessage(message);
-        toast(message, 'error');
-        return;
-      } finally {
-        setIsBusy(false);
-      }
-      afterSuccess();
-      toast('Done', 'success');
-    };
-    fireAndForget(run());
+    fireAndForget(
+      (async (): Promise<void> => {
+        setIsBusy(true);
+        setErrorMessage(null);
+        try {
+          await transactionMethodsApi.disputeMatch(match);
+        } catch (error) {
+          const message = getErrorMessage(error);
+          setErrorMessage(message);
+          toast(message, 'error');
+          return;
+        } finally {
+          setIsBusy(false);
+        }
+        referenceStore.invalidate();
+        afterSuccess();
+        toast(i18n.chrome.done, 'success');
+      })()
+    );
   }, []);
 
   return { execute, isBusy, errorMessage };
@@ -81,23 +87,25 @@ export function useCancelMatchTransaction(): UseCancelMatchTransactionReturn {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const execute = useCallback((match: $Domain.Match, afterSuccess: () => void): void => {
-    const run = async (): Promise<void> => {
-      setIsBusy(true);
-      setErrorMessage(null);
-      try {
-        await transactionMethodsApi.cancelMatch(match);
-      } catch (error) {
-        const message = getErrorMessage(error);
-        setErrorMessage(message);
-        toast(message, 'error');
-        return;
-      } finally {
-        setIsBusy(false);
-      }
-      afterSuccess();
-      toast('Done', 'success');
-    };
-    fireAndForget(run());
+    fireAndForget(
+      (async (): Promise<void> => {
+        setIsBusy(true);
+        setErrorMessage(null);
+        try {
+          await transactionMethodsApi.cancelMatch(match);
+        } catch (error) {
+          const message = getErrorMessage(error);
+          setErrorMessage(message);
+          toast(message, 'error');
+          return;
+        } finally {
+          setIsBusy(false);
+        }
+        referenceStore.invalidate();
+        afterSuccess();
+        toast(i18n.chrome.done, 'success');
+      })()
+    );
   }, []);
 
   return { execute, isBusy, errorMessage };
@@ -115,23 +123,25 @@ export function useCompleteMatchTransaction(): UseCompleteMatchTransactionReturn
 
   const execute = useCallback(
     (match: $Domain.Match, outcome: string, afterSuccess: () => void): void => {
-      const run = async (): Promise<void> => {
-        setIsBusy(true);
-        setErrorMessage(null);
-        try {
-          await transactionMethodsApi.completeMatch(match, outcome);
-        } catch (error) {
-          const message = getErrorMessage(error);
-          setErrorMessage(message);
-          toast(message, 'error');
-          return;
-        } finally {
-          setIsBusy(false);
-        }
-        afterSuccess();
-        toast('Done', 'success');
-      };
-      fireAndForget(run());
+      fireAndForget(
+        (async (): Promise<void> => {
+          setIsBusy(true);
+          setErrorMessage(null);
+          try {
+            await transactionMethodsApi.completeMatch(match, outcome);
+          } catch (error) {
+            const message = getErrorMessage(error);
+            setErrorMessage(message);
+            toast(message, 'error');
+            return;
+          } finally {
+            setIsBusy(false);
+          }
+          referenceStore.invalidate();
+          afterSuccess();
+          toast(i18n.chrome.done, 'success');
+        })()
+      );
     },
     []
   );

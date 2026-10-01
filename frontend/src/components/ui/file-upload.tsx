@@ -1,3 +1,4 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { Paperclip, X, Upload, CheckCircle, ZoomIn, RefreshCw } from 'lucide-react';
@@ -138,11 +139,11 @@ export function FileUpload({
 
   function processFile(file: File): void {
     if (accept !== undefined && accept !== '' && !fileMatchesAccept(file.type, accept)) {
-      setError('File type not allowed.');
+      setError(i18n.chrome.fileTypeNotAllowed);
       return;
     }
     if (maxSize !== undefined && file.size > maxSize) {
-      setError(`File is too large. Maximum size is ${formatFileSize(maxSize)}.`);
+      setError(i18n.fill(i18n.chrome.fileTooLargeWithSize, { size: formatFileSize(maxSize) }));
       return;
     }
     setError(null);
@@ -244,7 +245,7 @@ export function FileUpload({
               <Upload className="h-4 w-4 text-muted-foreground flex-shrink-0 animate-pulse" />
             )}
             <span className="text-sm text-foreground flex-1 truncate">
-              {isDone ? 'File ready' : 'Reading file…'}
+              {isDone ? i18n.chrome.fileReady : i18n.chrome.readingFile}
             </span>
             <span className="text-xs text-muted-foreground">{progress}%</span>
           </div>
@@ -288,8 +289,8 @@ export function FileUpload({
             </div>
             <button
               type="button"
-              aria-label="Remove"
-              title="Remove"
+              aria-label={i18n.chrome.remove}
+              title={i18n.chrome.remove}
               onClick={handleRemove}
               className="text-muted-foreground hover:text-foreground transition-colors self-start mt-0.5 flex-shrink-0"
             >
@@ -376,8 +377,8 @@ export function FileUpload({
               </div>
               <button
                 type="button"
-                aria-label="Remove"
-                title="Remove"
+                aria-label={i18n.chrome.remove}
+                title={i18n.chrome.remove}
                 onClick={handleRemove}
                 className="text-muted-foreground hover:text-foreground transition-colors self-start mt-0.5 flex-shrink-0"
               >
@@ -436,7 +437,7 @@ export function FileUpload({
                 isDragging ? 'scale-110' : 'group-hover:scale-110'
               )}
             />
-            <span>{isDragging ? 'Drop file here' : 'Click or drag file here'}</span>
+            <span>{isDragging ? i18n.chrome.dropFileHere : i18n.chrome.clickOrDragFile}</span>
             {((accept !== undefined && accept !== '') || maxSize !== undefined) && (
               <span className="text-xs text-muted-foreground/70">
                 {[

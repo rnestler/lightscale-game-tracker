@@ -1,6 +1,7 @@
 import type { FileValue } from '../types/file';
 
 export interface GameType {
+  readonly _sample?: boolean;
   id: string;
   name: string;
   category: string;
@@ -12,6 +13,7 @@ export interface GameType {
 }
 
 export interface Player {
+  readonly _sample?: boolean;
   id: string;
   nickname: string;
   fullName: string;
@@ -23,6 +25,7 @@ export interface Player {
 }
 
 export interface LeaderboardEntry {
+  readonly _sample?: boolean;
   id: string;
   playerId: string;
   gameId: string;
@@ -36,6 +39,7 @@ export interface LeaderboardEntry {
 }
 
 export interface Match {
+  readonly _sample?: boolean;
   id: string;
   gameId: string;
   playerOneId: string;

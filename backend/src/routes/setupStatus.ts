@@ -13,5 +13,11 @@ setupStatusRouter.get('/', (_request, response) => {
     socialProviders: configuredSocialProviders(),
     addressLookup: environmentConfigured('GOOGLE_MAPS_API_KEY'),
     mapDisplay: environmentConfigured('GOOGLE_MAPS_BROWSER_KEY'),
+    capabilities: {
+      passwordReset: true,
+      emailVerification: true,
+      twoFactor: true,
+      passkeys: true,
+    },
   });
 });

@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { AuthFrame } from './AuthFrame';
@@ -9,8 +10,8 @@ export function AwaitingApproval(): JSX.Element {
 
   return (
     <AuthFrame
-      title={'Awaiting Approval'}
-      subtitle={'You need administrator approval before you can access the application.'}
+      screenTitle={i18n.chrome.awaitingApproval}
+      screenSubtitle={i18n.chrome.awaitingApprovalMessage}
     >
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -19,7 +20,8 @@ export function AwaitingApproval(): JSX.Element {
           </div>
           {user && (
             <div className="text-sm text-muted-foreground">
-              Signed up as <span className="font-medium text-foreground">{user.email}</span>
+              {i18n.chrome.signedUpAs}{' '}
+              <span className="font-medium text-foreground">{user.email}</span>
             </div>
           )}
         </div>
@@ -35,7 +37,7 @@ export function AwaitingApproval(): JSX.Element {
           }}
           className="h-10 w-full rounded-md bg-secondary text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
         >
-          Sign out
+          {i18n.chrome.signOut}
         </button>
       </div>
     </AuthFrame>

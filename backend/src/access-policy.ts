@@ -21,13 +21,6 @@ export const RESOURCE_PERMISSIONS: Record<string, PermissionEntry | undefined> =
     update: { all: ['scorekeeper'], own: [] },
     delete: { all: [], own: [] },
   },
-  'games.leaderboard': {
-    individual: false,
-    read: { all: [], own: [] },
-    create: { all: [], own: [] },
-    update: { all: [], own: [] },
-    delete: { all: [], own: [] },
-  },
   players: {
     individual: false,
     read: { all: ['player', 'scorekeeper'], own: [] },
@@ -90,7 +83,8 @@ export const ROW_POLICIES: Record<string, RowPolicy | undefined> = {
     table: 'GameType',
     individual: false,
     parent: null,
-    membership: null,
+    membership: (alias, user) =>
+      `EXISTS (SELECT 1 FROM "creator_games" c WHERE c."gameTypeId" = ${alias}.id AND c."userId" = ${user})`,
     read: [
       { role: 'player', scope: 'all', fields: null, where: null, owner: null },
       { role: 'scorekeeper', scope: 'all', fields: null, where: null, owner: null },
@@ -99,27 +93,12 @@ export const ROW_POLICIES: Record<string, RowPolicy | undefined> = {
     update: [{ role: 'scorekeeper', scope: 'all', fields: null, where: null, owner: null }],
     delete: [],
   },
-  'games.leaderboard': {
-    table: 'LeaderboardEntry',
-    individual: false,
-    parent: {
-      path: 'games',
-      table: 'GameType',
-      source: (alias) =>
-        `"GameType$leaderboard" ${alias}_link JOIN "LeaderboardEntry" ${alias} ON ${alias}.id = ${alias}_link."elementId"`,
-      key: (alias) => `${alias}_link."ownerId"`,
-    },
-    membership: null,
-    read: [],
-    create: [],
-    update: [],
-    delete: [],
-  },
   players: {
     table: 'Player',
     individual: false,
     parent: null,
-    membership: null,
+    membership: (alias, user) =>
+      `EXISTS (SELECT 1 FROM "creator_players" c WHERE c."playerId" = ${alias}.id AND c."userId" = ${user})`,
     read: [
       { role: 'player', scope: 'all', fields: null, where: null, owner: null },
       { role: 'scorekeeper', scope: 'all', fields: null, where: null, owner: null },
@@ -152,7 +131,8 @@ export const ROW_POLICIES: Record<string, RowPolicy | undefined> = {
     table: 'LeaderboardEntry',
     individual: false,
     parent: null,
-    membership: null,
+    membership: (alias, user) =>
+      `EXISTS (SELECT 1 FROM "creator_leaderboards" c WHERE c."leaderboardEntryId" = ${alias}.id AND c."userId" = ${user})`,
     read: [
       { role: 'player', scope: 'all', fields: null, where: null, owner: null },
       { role: 'scorekeeper', scope: 'all', fields: null, where: null, owner: null },
@@ -162,6 +142,13 @@ export const ROW_POLICIES: Record<string, RowPolicy | undefined> = {
     delete: [],
   },
 };
+
+export interface IndividualMembership {
+  table: string;
+  column: string;
+}
+
+export const INDIVIDUAL_MEMBERSHIPS: Record<string, IndividualMembership[] | undefined> = {};
 
 export const MANAGEMENT_ROLES: string[] = ['player', 'scorekeeper'];
 

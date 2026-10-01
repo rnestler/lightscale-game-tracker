@@ -1,7 +1,10 @@
 import type { Queryable } from './db.js';
+import { PreconditionError } from './utils/precondition.js';
 
 type StepBudget = (count?: number) => void;
 type Derivations = Map<string, Record<string, unknown>>;
+
+const IN_DERIVATION: Record<string, unknown> = {};
 
 function createStepBudget(): StepBudget {
   let __steps = 0;
@@ -42,6 +45,86 @@ async function referencedRow(
   return row;
 }
 
+export async function deriveLeaderboardEntry(
+  $client: Queryable,
+  $row: Record<string, unknown>,
+  callerId: string | null,
+  __budget: StepBudget = createStepBudget(),
+  __derivations: Derivations = new Map()
+): Promise<Record<string, unknown>> {
+  const $derivationKey = `LeaderboardEntry:${String($row.id)}`;
+  const $known = __derivations.get($derivationKey);
+  if ($known === IN_DERIVATION) {
+    throw new PreconditionError({
+      kind: 'stated',
+      message:
+        "A calculated field of 'LeaderboardEntry' loops back to the record it is calculated for and cannot be evaluated",
+    });
+  }
+  if ($known !== undefined) {
+    return $known;
+  }
+  if (typeof $row.id === 'string' && $row.id !== '') {
+    __derivations.set($derivationKey, IN_DERIVATION);
+  }
+  const $self = $row as {
+    id: string;
+    playerId: string;
+    gameId: string;
+    rating: number;
+    matchesPlayed: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    lastPlayedAt: string;
+    playerNickname: string;
+  };
+  const $referenceRow0 = await referencedRow(
+    $client,
+    __derivations,
+    'Player',
+    $self.playerId,
+    "Calculated field of 'LeaderboardEntry': referenced 'Player' record not found"
+  );
+  const $reference1 = ($referenceRow0 ?? {
+    id: '',
+    nickname: '',
+    fullName: '',
+    emailAddress: '',
+    avatar: '',
+    bio: '',
+    joinedDate: '',
+    userAccountId: '',
+  }) as {
+    id: string;
+    nickname: string;
+    fullName: string;
+    emailAddress: string;
+    avatar: string;
+    bio: string;
+    joinedDate: string;
+    userAccountId: string;
+  };
+  const playerNickname = $reference1.nickname;
+  const $computed = { ...$row, playerNickname };
+  __derivations.set($derivationKey, $computed);
+  return $computed;
+}
+
+export async function deriveLeaderboardEntryRows(
+  $client: Queryable,
+  rows: Array<Record<string, unknown>>,
+  callerId: string | null,
+  budgetFor: () => StepBudget = createStepBudget,
+  __derivations: Derivations = new Map()
+): Promise<Array<Record<string, unknown>>> {
+  const computed: Array<Record<string, unknown>> = [];
+  for (const row of rows) {
+    computed.push(await deriveLeaderboardEntry($client, row, callerId, budgetFor(), __derivations));
+  }
+  return computed;
+}
+
 export async function deriveGameType(
   $client: Queryable,
   $row: Record<string, unknown>,
@@ -51,8 +134,18 @@ export async function deriveGameType(
 ): Promise<Record<string, unknown>> {
   const $derivationKey = `GameType:${String($row.id)}`;
   const $known = __derivations.get($derivationKey);
+  if ($known === IN_DERIVATION) {
+    throw new PreconditionError({
+      kind: 'stated',
+      message:
+        "A calculated field of 'GameType' loops back to the record it is calculated for and cannot be evaluated",
+    });
+  }
   if ($known !== undefined) {
     return $known;
+  }
+  if (typeof $row.id === 'string' && $row.id !== '') {
+    __derivations.set($derivationKey, IN_DERIVATION);
   }
   const $self = $row as {
     id: string;
@@ -65,12 +158,18 @@ export async function deriveGameType(
     leaderboard: string[];
   };
   const displayName = `${String($self.name)} (${String($self.rulesVariant)})`;
-  const $collection0 = (
-    await $client.query<Record<string, unknown>>(
-      'SELECT * FROM "LeaderboardEntry" WHERE "gameId" = $1',
-      [$self.id]
-    )
-  ).rows as Array<{
+  const $collection0 = (await deriveLeaderboardEntryRows(
+    $client,
+    (
+      await $client.query<Record<string, unknown>>(
+        'SELECT * FROM "LeaderboardEntry" WHERE "gameId" = $1',
+        [$self.id]
+      )
+    ).rows,
+    callerId,
+    () => __budget,
+    __derivations
+  )) as Array<{
     id: string;
     playerId: string;
     gameId: string;
@@ -129,8 +228,18 @@ export async function deriveMatch(
 ): Promise<Record<string, unknown>> {
   const $derivationKey = `Match:${String($row.id)}`;
   const $known = __derivations.get($derivationKey);
+  if ($known === IN_DERIVATION) {
+    throw new PreconditionError({
+      kind: 'stated',
+      message:
+        "A calculated field of 'Match' loops back to the record it is calculated for and cannot be evaluated",
+    });
+  }
   if ($known !== undefined) {
     return $known;
+  }
+  if (typeof $row.id === 'string' && $row.id !== '') {
+    __derivations.set($derivationKey, IN_DERIVATION);
   }
   const $self = $row as {
     id: string;
@@ -249,76 +358,6 @@ export async function deriveMatchRows(
   const computed: Array<Record<string, unknown>> = [];
   for (const row of rows) {
     computed.push(await deriveMatch($client, row, callerId, budgetFor(), __derivations));
-  }
-  return computed;
-}
-
-export async function deriveLeaderboardEntry(
-  $client: Queryable,
-  $row: Record<string, unknown>,
-  callerId: string | null,
-  __budget: StepBudget = createStepBudget(),
-  __derivations: Derivations = new Map()
-): Promise<Record<string, unknown>> {
-  const $derivationKey = `LeaderboardEntry:${String($row.id)}`;
-  const $known = __derivations.get($derivationKey);
-  if ($known !== undefined) {
-    return $known;
-  }
-  const $self = $row as {
-    id: string;
-    playerId: string;
-    gameId: string;
-    rating: number;
-    matchesPlayed: number;
-    wins: number;
-    losses: number;
-    draws: number;
-    lastPlayedAt: string;
-    playerNickname: string;
-  };
-  const $referenceRow0 = await referencedRow(
-    $client,
-    __derivations,
-    'Player',
-    $self.playerId,
-    "Calculated field of 'LeaderboardEntry': referenced 'Player' record not found"
-  );
-  const $reference1 = ($referenceRow0 ?? {
-    id: '',
-    nickname: '',
-    fullName: '',
-    emailAddress: '',
-    avatar: '',
-    bio: '',
-    joinedDate: '',
-    userAccountId: '',
-  }) as {
-    id: string;
-    nickname: string;
-    fullName: string;
-    emailAddress: string;
-    avatar: string;
-    bio: string;
-    joinedDate: string;
-    userAccountId: string;
-  };
-  const playerNickname = $reference1.nickname;
-  const $computed = { ...$row, playerNickname };
-  __derivations.set($derivationKey, $computed);
-  return $computed;
-}
-
-export async function deriveLeaderboardEntryRows(
-  $client: Queryable,
-  rows: Array<Record<string, unknown>>,
-  callerId: string | null,
-  budgetFor: () => StepBudget = createStepBudget,
-  __derivations: Derivations = new Map()
-): Promise<Array<Record<string, unknown>>> {
-  const computed: Array<Record<string, unknown>> = [];
-  for (const row of rows) {
-    computed.push(await deriveLeaderboardEntry($client, row, callerId, budgetFor(), __derivations));
   }
   return computed;
 }

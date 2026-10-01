@@ -1,3 +1,4 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
@@ -63,7 +64,7 @@ export function TwoFactorSettings(): JSX.Element {
 
     const currentPassword = passwordRef.current;
     if (requiresPassword && !currentPassword) {
-      setError('Password is required');
+      setError(i18n.chrome.passwordRequired);
       return;
     }
 
@@ -95,14 +96,14 @@ export function TwoFactorSettings(): JSX.Element {
 
       if (isInvalidPasswordError(err)) {
         if (requiresPassword) {
-          setError('Invalid password. Please try again.');
+          setError(i18n.chrome.invalidPassword);
         } else {
           setRequiresPassword(true);
-          setError('Password is required to enable two-factor authentication');
+          setError(i18n.chrome.passwordRequiredToEnable);
         }
         setIsLoading(false);
       } else {
-        setError(getErrorMessage(err, 'Failed to enable two-factor authentication'));
+        setError(getErrorMessage(err, i18n.chrome.twoFaEnableFailed));
         setIsLoading(false);
         setIsEnabling(false);
         console.error('Failed to enable two-factor authentication', err);
@@ -116,7 +117,7 @@ export function TwoFactorSettings(): JSX.Element {
 
     const currentPassword = passwordRef.current;
     if (requiresPassword && !currentPassword) {
-      setError('Password is required');
+      setError(i18n.chrome.passwordRequired);
       return;
     }
 
@@ -137,14 +138,14 @@ export function TwoFactorSettings(): JSX.Element {
 
       if (isInvalidPasswordError(err)) {
         if (requiresPassword) {
-          setError('Invalid password. Please try again.');
+          setError(i18n.chrome.invalidPassword);
         } else {
           setRequiresPassword(true);
-          setError('Password is required to disable two-factor authentication');
+          setError(i18n.chrome.passwordRequiredToDisable);
         }
         setIsLoading(false);
       } else {
-        setError(getErrorMessage(err, 'Failed to disable two-factor authentication'));
+        setError(getErrorMessage(err, i18n.chrome.twoFaDisableFailed));
         setIsLoading(false);
         setIsDisabling(false);
         console.error('Failed to disable two-factor authentication', err);
@@ -167,7 +168,7 @@ export function TwoFactorSettings(): JSX.Element {
         setBackupCodesAcknowledged(false);
       }
     } catch (err) {
-      const errorMessage = getErrorMessage(err, 'Invalid verification code');
+      const errorMessage = getErrorMessage(err, i18n.chrome.invalidVerificationCode);
       setError(errorMessage);
       console.error('Failed to verify two-factor code', err);
     } finally {
@@ -200,21 +201,19 @@ export function TwoFactorSettings(): JSX.Element {
         <div className="flex flex-col gap-6 lg:gap-8">
           <div className="flex flex-col gap-4">
             <h3 className="text-lg font-semibold text-foreground">
-              {needsVerification ? 'Verify Setup' : 'Setup Complete'}
+              {needsVerification ? i18n.chrome.twoFaVerifySetup : i18n.chrome.twoFaSetupComplete}
             </h3>
-            <p className="text-sm text-muted-foreground">
-              Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)
-            </p>
+            <p className="text-sm text-muted-foreground">{i18n.chrome.twoFaScanQr}</p>
             <div className="flex justify-start items-center p-4 lg:p-6 bg-card border border-border rounded-md min-h-[200px]">
               {qrCodeDataUrl ? (
                 <img src={qrCodeDataUrl} alt="2FA QR Code" className="max-w-full h-auto" />
               ) : (
-                <div className="text-sm text-muted-foreground">Generating QR code...</div>
+                <div className="text-sm text-muted-foreground">{i18n.chrome.generatingQrCode}</div>
               )}
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-foreground">Backup Codes</p>
+                <p className="text-sm font-medium text-foreground">{i18n.chrome.backupCodes}</p>
                 {revealedBackupCodes.size === twoFactorData.backupCodes.length && (
                   <button
                     type="button"
@@ -223,13 +222,13 @@ export function TwoFactorSettings(): JSX.Element {
                     }}
                     className="text-xs text-primary-text hover:underline"
                   >
-                    Copy all
+                    {i18n.chrome.copyAll}
                   </button>
                 )}
               </div>
               <p className="text-sm text-muted-foreground">
-                Save these codes in a safe place. You can use them to access your account if you
-                lose your device. <strong>Do not share screenshots of these codes.</strong>
+                {i18n.chrome.backupCodesSaveHint}{' '}
+                <strong>{i18n.chrome.backupCodesDontShare}</strong>
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mt-2">
                 {twoFactorData.backupCodes.map((code, index) => {
@@ -248,7 +247,7 @@ export function TwoFactorSettings(): JSX.Element {
                               copyBackupCode(code).catch(console.error);
                             }}
                             className="opacity-0 group-hover:opacity-100 transition-opacity text-primary-text hover:text-primary-text/80"
-                            title="Copy code"
+                            title={i18n.chrome.copyCode}
                           >
                             📋
                           </button>
@@ -278,7 +277,7 @@ export function TwoFactorSettings(): JSX.Element {
                       }}
                       className="h-8 px-4 rounded-md bg-primary text-xs font-medium text-primary-foreground hover:bg-primary/90"
                     >
-                      {"I've saved my backup codes"}
+                      {i18n.chrome.savedBackupCodes}
                     </button>
                   </div>
                 )}
@@ -296,11 +295,9 @@ export function TwoFactorSettings(): JSX.Element {
             >
               <div className="flex flex-col gap-2">
                 <label htmlFor="verificationCode" className="text-sm font-medium text-foreground">
-                  Enter Verification Code
+                  {i18n.chrome.enterVerificationCodeLabel}
                 </label>
-                <p className="text-sm text-muted-foreground">
-                  Enter the 6-digit code from your authenticator app to complete setup
-                </p>
+                <p className="text-sm text-muted-foreground">{i18n.chrome.twoFaEnterCodeHint}</p>
                 <input
                   id="verificationCode"
                   type="text"
@@ -337,7 +334,7 @@ export function TwoFactorSettings(): JSX.Element {
                 disabled={isLoading}
                 className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? 'Verifying...' : 'Verify and Enable 2FA'}
+                {isLoading ? i18n.chrome.verifyingIndicator : i18n.chrome.verifyAndEnable}
               </button>
             </form>
           )}
@@ -356,7 +353,7 @@ export function TwoFactorSettings(): JSX.Element {
               }}
               className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Done
+              {i18n.chrome.done}
             </button>
           )}
         </div>
@@ -368,14 +365,11 @@ export function TwoFactorSettings(): JSX.Element {
     <div>
       <div className="flex flex-col gap-6 lg:gap-8">
         <div className="flex flex-col gap-2">
-          <h3 className="text-lg font-semibold text-foreground">Two-Factor Authentication</h3>
-          <p className="text-sm text-muted-foreground">
-            Add an extra layer of security to your account by requiring a verification code from
-            your authenticator app.
-          </p>
+          <h3 className="text-lg font-semibold text-foreground">{i18n.chrome.twoFaTitle}</h3>
+          <p className="text-sm text-muted-foreground">{i18n.chrome.twoFaDescription}</p>
           {twoFactorEnabled && (
             <div className="rounded-md border border-border bg-secondary p-3 mt-2">
-              <p className="text-sm text-foreground">2FA is currently enabled</p>
+              <p className="text-sm text-foreground">{i18n.chrome.twoFaCurrentlyEnabled}</p>
             </div>
           )}
         </div>
@@ -398,7 +392,7 @@ export function TwoFactorSettings(): JSX.Element {
             {requiresPassword ? (
               <div className="flex flex-col gap-2">
                 <label htmlFor="enablePassword" className="text-sm font-medium text-foreground">
-                  Confirm Password
+                  {i18n.chrome.confirmPasswordLabel}
                 </label>
                 <div className="relative">
                   <input
@@ -412,7 +406,7 @@ export function TwoFactorSettings(): JSX.Element {
                     }}
                     required
                     disabled={isLoading}
-                    placeholder="Enter your password to enable 2FA"
+                    placeholder={i18n.chrome.enableTwoFaPasswordPlaceholder}
                     autoComplete="current-password"
                     className="h-10 w-full rounded-md border border-border bg-background px-3 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   />
@@ -423,7 +417,7 @@ export function TwoFactorSettings(): JSX.Element {
                     }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                     tabIndex={-1}
-                    aria-label={showPassword ? 'Hide' : 'Show'}
+                    aria-label={showPassword ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -436,7 +430,7 @@ export function TwoFactorSettings(): JSX.Element {
                 disabled={isLoading}
                 className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? 'Enabling...' : 'Enable Two-Factor Authentication'}
+                {isLoading ? i18n.chrome.enablingIndicator : i18n.chrome.enableTwoFa}
               </button>
             </div>
           </form>
@@ -454,7 +448,7 @@ export function TwoFactorSettings(): JSX.Element {
             {requiresPassword ? (
               <div className="flex flex-col gap-2">
                 <label htmlFor="disablePassword" className="text-sm font-medium text-foreground">
-                  Confirm Password
+                  {i18n.chrome.confirmPasswordLabel}
                 </label>
                 <div className="relative">
                   <input
@@ -468,7 +462,7 @@ export function TwoFactorSettings(): JSX.Element {
                     }}
                     required
                     disabled={isLoading}
-                    placeholder="Enter your password to disable 2FA"
+                    placeholder={i18n.chrome.disableTwoFaPasswordPlaceholder}
                     autoComplete="current-password"
                     className="h-10 w-full rounded-md border border-border bg-background px-3 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   />
@@ -479,7 +473,7 @@ export function TwoFactorSettings(): JSX.Element {
                     }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                     tabIndex={-1}
-                    aria-label={showPassword ? 'Hide' : 'Show'}
+                    aria-label={showPassword ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -498,14 +492,14 @@ export function TwoFactorSettings(): JSX.Element {
                 disabled={isLoading}
                 className="h-10 px-4 rounded-md bg-transparent text-sm font-medium text-foreground hover:bg-secondary hover:text-secondary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Cancel
+                {i18n.chrome.cancel}
               </button>
               <button
                 type="submit"
                 disabled={isLoading}
                 className="h-10 px-4 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? 'Disabling...' : 'Disable 2FA'}
+                {isLoading ? i18n.chrome.disablingIndicator : i18n.chrome.disableTwoFaButton}
               </button>
             </div>
           </form>
@@ -523,7 +517,7 @@ export function TwoFactorSettings(): JSX.Element {
               }}
               className="h-10 px-4 rounded-md bg-transparent text-sm font-medium text-foreground hover:bg-secondary hover:text-secondary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Disable Two-Factor Authentication
+              {i18n.chrome.disableTwoFa}
             </button>
           </div>
         )}

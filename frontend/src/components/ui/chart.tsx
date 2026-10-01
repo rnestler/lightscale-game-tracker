@@ -104,11 +104,27 @@ export interface ChartTooltipContentProps extends React.ComponentProps<'div'> {
   hideLabel?: boolean;
   hideIndicator?: boolean;
   nameKey?: string;
+  colorKey?: string;
   formatValue?: (value: number) => string;
 }
 
 function configEntry(config: ChartConfig, key: string): ChartConfigItem | undefined {
   return config[key];
+}
+
+function indicatorColorOf(
+  entry: TooltipEntry,
+  entryConfig: ChartConfigItem | undefined,
+  colorKey: string | undefined
+): string | undefined {
+  if (colorKey === undefined) {
+    return entry.color ?? entryConfig?.color;
+  }
+  const rowColor = entry.payload?.[colorKey];
+  if (typeof rowColor !== 'string') {
+    throw new Error(`The chart row carries no '${colorKey}' color`);
+  }
+  return rowColor;
 }
 
 export function ChartTooltipContent({
@@ -119,6 +135,7 @@ export function ChartTooltipContent({
   hideLabel,
   hideIndicator,
   nameKey,
+  colorKey,
   formatValue,
 }: ChartTooltipContentProps): React.JSX.Element | null {
   const { config } = useChart();
@@ -142,7 +159,7 @@ export function ChartTooltipContent({
         {payload.map((entry, index) => {
           const entryKey = nameKey ?? String(entry.dataKey ?? entry.name ?? `item-${index}`);
           const entryConfig = configEntry(config, entryKey);
-          const indicatorColor = entry.color ?? entryConfig?.color;
+          const indicatorColor = indicatorColorOf(entry, entryConfig, colorKey);
           return (
             <div key={index} className="flex w-full items-center gap-2">
               {hideIndicator !== true ? (

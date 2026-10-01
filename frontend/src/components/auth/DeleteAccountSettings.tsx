@@ -1,11 +1,11 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 
-const CONFIRM_WORD = 'DELETE';
-
 export function DeleteAccountSettings(): JSX.Element {
+  const confirmWord = i18n.chrome.deleteAccountConfirmWord;
   const { deleteAccount } = useAuth();
   const [confirmation, setConfirmation] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -16,15 +16,18 @@ export function DeleteAccountSettings(): JSX.Element {
     setError(null);
     setIsLoading(true);
     try {
-      await deleteAccount();
-      window.location.href = '/';
+      const outcome = await deleteAccount();
+      window.location.href =
+        outcome === 'deleted'
+          ? '/'
+          : `/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to delete account. Please try again.'));
+      setError(getErrorMessage(err, i18n.chrome.deleteAccountFailed));
       setIsLoading(false);
     }
   };
 
-  const confirmed = confirmation.trim() === CONFIRM_WORD;
+  const confirmed = confirmation.trim() === confirmWord;
 
   return (
     <div>
@@ -37,14 +40,14 @@ export function DeleteAccountSettings(): JSX.Element {
         className="flex flex-col gap-6 lg:gap-8"
       >
         <div className="flex flex-col gap-2">
-          <h3 className="text-lg font-semibold text-destructive-text">Delete account</h3>
-          <p className="text-sm text-muted-foreground">
-            Permanently delete your account and all associated data.
-          </p>
+          <h3 className="text-lg font-semibold text-destructive-text">
+            {i18n.chrome.deleteAccountTitle}
+          </h3>
+          <p className="text-sm text-muted-foreground">{i18n.chrome.deleteAccountDescription}</p>
         </div>
 
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-foreground">
-          This action cannot be undone. Your account and data will be removed for good.
+          {i18n.chrome.deleteAccountWarning}
         </div>
 
         {error && (
@@ -55,7 +58,7 @@ export function DeleteAccountSettings(): JSX.Element {
 
         <div className="flex flex-col gap-2">
           <label htmlFor="deleteConfirmation" className="text-sm font-medium text-foreground">
-            Type DELETE to confirm
+            {i18n.chrome.deleteAccountConfirmLabel}
           </label>
           <input
             id="deleteConfirmation"
@@ -66,7 +69,7 @@ export function DeleteAccountSettings(): JSX.Element {
             }}
             disabled={isLoading}
             autoComplete="off"
-            placeholder={CONFIRM_WORD}
+            placeholder={confirmWord}
             className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-destructive focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
@@ -76,7 +79,7 @@ export function DeleteAccountSettings(): JSX.Element {
           disabled={isLoading || !confirmed}
           className="h-10 rounded-md bg-destructive px-6 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isLoading ? 'Deleting…' : 'Delete my account'}
+          {isLoading ? i18n.chrome.deletingAccount : i18n.chrome.deleteAccountButton}
         </button>
       </form>
     </div>

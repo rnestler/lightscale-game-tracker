@@ -1,18 +1,83 @@
 import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '../auth.js';
+import { pool } from '../db.js';
+import { getEffectiveUserRoles, hasAppAccess } from '../authorization.js';
 
 export const placesProxyRouter = Router();
 
 const geocodeCache = new Map<string, { lat: number; lng: number }>();
 const GEOCODE_CACHE_MAX = 1000;
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const LOOKUPS_PER_MINUTE = 60;
+const LOOKUPS_PER_HOUR = 600;
 
-placesProxyRouter.get('/maps-key', async (request, response) => {
+interface LookupWindow {
+  count: number;
+  resetAt: number;
+}
+
+const lookupWindows = new Map<string, LookupWindow>();
+
+function sweepLookupWindows(now: number): void {
+  for (const [key, lookupWindow] of lookupWindows) {
+    if (now >= lookupWindow.resetAt) {
+      lookupWindows.delete(key);
+    }
+  }
+}
+
+function withinLookupLimit(key: string, limit: number, windowMs: number, now: number): boolean {
+  const lookupWindow = lookupWindows.get(key);
+  if (lookupWindow === undefined || now >= lookupWindow.resetAt) {
+    lookupWindows.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  lookupWindow.count += 1;
+  return lookupWindow.count <= limit;
+}
+
+function lookupAllowed(userId: string): boolean {
+  const now = Date.now();
+  if (lookupWindows.size >= 10_000) {
+    sweepLookupWindows(now);
+  }
+  const minute = withinLookupLimit(`minute:${userId}`, LOOKUPS_PER_MINUTE, MINUTE_MS, now);
+  const hour = withinLookupLimit(`hour:${userId}`, LOOKUPS_PER_HOUR, HOUR_MS, now);
+  return minute && hour;
+}
+
+async function placesCaller(request: Request, response: Response): Promise<string | null> {
   const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
   if (!session) {
     response
       .status(401)
       .json({ error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED' });
+    return null;
+  }
+  if (!hasAppAccess(await getEffectiveUserRoles(pool, session.user.id))) {
+    response.status(403).json({ error: 'Forbidden' });
+    return null;
+  }
+  return session.user.id;
+}
+
+async function lookupCaller(request: Request, response: Response): Promise<boolean> {
+  const userId = await placesCaller(request, response);
+  if (userId === null) {
+    return false;
+  }
+  if (!lookupAllowed(userId)) {
+    response.status(429).json({ error: 'Too many address lookups', code: 'RATE_LIMITED' });
+    return false;
+  }
+  return true;
+}
+
+placesProxyRouter.get('/maps-key', async (request, response) => {
+  if ((await placesCaller(request, response)) === null) {
     return;
   }
   const key = process.env['GOOGLE_MAPS_BROWSER_KEY'] ?? '';
@@ -24,11 +89,7 @@ placesProxyRouter.get('/maps-key', async (request, response) => {
 });
 
 placesProxyRouter.post('/geocode', async (request, response) => {
-  const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-  if (!session) {
-    response
-      .status(401)
-      .json({ error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED' });
+  if (!(await lookupCaller(request, response))) {
     return;
   }
   const key = process.env['GOOGLE_MAPS_API_KEY'] ?? '';
@@ -80,11 +141,7 @@ placesProxyRouter.post('/geocode', async (request, response) => {
 });
 
 placesProxyRouter.post('/autocomplete', async (request, response) => {
-  const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-  if (!session) {
-    response
-      .status(401)
-      .json({ error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED' });
+  if (!(await lookupCaller(request, response))) {
     return;
   }
   const key = process.env['GOOGLE_MAPS_API_KEY'] ?? '';
@@ -132,11 +189,7 @@ placesProxyRouter.post('/autocomplete', async (request, response) => {
 });
 
 placesProxyRouter.post('/details', async (request, response) => {
-  const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-  if (!session) {
-    response
-      .status(401)
-      .json({ error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED' });
+  if (!(await lookupCaller(request, response))) {
     return;
   }
   const key = process.env['GOOGLE_MAPS_API_KEY'] ?? '';
@@ -173,11 +226,7 @@ placesProxyRouter.post('/details', async (request, response) => {
 });
 
 placesProxyRouter.post('/embed-url', async (request, response) => {
-  const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-  if (!session) {
-    response
-      .status(401)
-      .json({ error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED' });
+  if ((await placesCaller(request, response)) === null) {
     return;
   }
   const key = process.env['GOOGLE_MAPS_BROWSER_KEY'] ?? '';

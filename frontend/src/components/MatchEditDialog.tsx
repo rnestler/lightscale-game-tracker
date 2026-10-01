@@ -1,14 +1,17 @@
-import type { JSX } from 'react';
-import { useState } from 'react';
-import type * as $Domain from '../types/domain';
-import { usePermissions, canUpdateField, canCreateField } from '../hooks/usePermissions';
-import { useMatches } from '../hooks/useMatches';
+import { i18n } from '../i18n/text';
+import { useState, type JSX } from 'react';
 import { useGames } from '../hooks/useGames';
+import { useMatches } from '../hooks/useMatches';
 import { usePlayers } from '../hooks/usePlayers';
+import { FormField, FormDateTimePicker, FormRichTextEditor, FormSelect } from './ui/form-field';
+import { usePermissions } from '../hooks/usePermissions';
+import { GameTypeEditDialog } from './GameTypeEditDialog';
+import { PlayerEditDialog } from './PlayerEditDialog';
+import { refusalFieldErrors, runWithToast } from '../utils/errorHandling';
+import type * as $Domain from '../types/domain';
+import { ChevronDownIcon, Loader2Icon } from 'lucide-react';
 import { toast } from '../utils/toast';
-
-import { getErrorMessage, refusalFieldErrors, runWithToast } from '../utils/errorHandling';
-import { textValue } from '../utils/recordValues';
+import { Skeleton } from './ui/skeleton';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -18,13 +21,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  focusFirstField,
 } from './ui/dialog';
-import { FormField, FormSelect, FormDateTimePicker, FormRichTextEditor } from './ui/form-field';
-import { ErrorMessage } from './ui/error-message';
-import { GameTypeEditDialog } from './GameTypeEditDialog';
-import { PlayerEditDialog } from './PlayerEditDialog';
-import { ChevronDownIcon, Loader2Icon } from 'lucide-react';
-
+type FormErrors = Partial<Record<string, string>>;
+const SELECT_OPTION_STYLE = { backgroundColor: 'var(--background)', color: 'var(--foreground)' };
 interface MatchEditDialogProps {
   open: boolean;
   editing: $Domain.Match | null;
@@ -51,9 +51,6 @@ interface MatchEditDialogProps {
   }) => Promise<{ id: string } | void>;
 }
 
-type FormErrors = Partial<Record<string, string>>;
-const SELECT_OPTION_STYLE = { backgroundColor: 'var(--background)', color: 'var(--foreground)' };
-
 export function MatchEditDialog({
   open,
   editing,
@@ -64,90 +61,97 @@ export function MatchEditDialog({
   defaults = {},
 }: MatchEditDialogProps): JSX.Element {
   const { permissions } = usePermissions();
-  const matchesHook = useMatches({ autoLoad: false });
-  const { games, createGameType, isBusy: isBusyGameType } = useGames();
-  const { players, createPlayer, isBusy: isBusyPlayer } = usePlayers();
-  const [game$, setGame$] = useState('');
-  const [scheduledAt$, setScheduledAt$] = useState(new Date().toISOString());
-  const [playerOne$, setPlayerOne$] = useState('');
-  const [playerTwo$, setPlayerTwo$] = useState('');
-  const [status$, setStatus$] = useState('scheduled');
-  const [outcome$, setOutcome$] = useState('playerOneWin');
-  const [notes$, setNotes$] = useState('');
-  const [game$CreateOpen, setGame$CreateOpen] = useState(false);
-  const [playerOne$CreateOpen, setPlayerOne$CreateOpen] = useState(false);
-  const [playerTwo$CreateOpen, setPlayerTwo$CreateOpen] = useState(false);
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [rootError, setRootError] = useState<string | null>(null);
-  const [seededKey, setSeededKey] = useState<string | null>(null);
-  const seedKey = open ? (editing?.id ?? 'new') : null;
-  if (seededKey !== seedKey) {
-    setSeededKey(seedKey);
-    if (seedKey !== null && editing) {
-      setGame$(textValue(editing.gameId));
-      setScheduledAt$(textValue(editing.scheduledAt));
-      setPlayerOne$(textValue(editing.playerOneId));
-      setPlayerTwo$(textValue(editing.playerTwoId));
-      setStatus$(textValue(editing.status));
-      setOutcome$(textValue(editing.outcome));
-      setNotes$(textValue(editing.notes));
-      setErrors({});
-      setRootError(null);
-    } else if (seedKey !== null) {
-      setGame$(defaults.gameId ?? '');
-      setScheduledAt$(defaults.scheduledAt ?? new Date().toISOString());
-      setPlayerOne$(defaults.playerOneId ?? '');
-      setPlayerTwo$(defaults.playerTwoId ?? '');
-      setStatus$(defaults.status ?? 'scheduled');
-      setOutcome$(defaults.outcome ?? 'playerOneWin');
-      setNotes$(defaults.notes ?? '');
-      setErrors({});
-      setRootError(null);
+  const { games, isInitializing: gamesInitializing, createGameType } = useGames({ autoLoad: open });
+  const { reloadMatches, createMatch, updateMatch } = useMatches({ autoLoad: false });
+  const {
+    players,
+    isInitializing: playersInitializing,
+    createPlayer,
+  } = usePlayers({ autoLoad: open });
+  const canSubmitEditMatch = editing
+    ? (permissions?.['matches']?.update ?? false)
+    : (permissions?.['matches']?.create ?? false);
+  const [editMatchGame$, setEditMatchGame$] = useState(defaults.gameId ?? '');
+  const [editMatchScheduledAt$, setEditMatchScheduledAt$] = useState(
+    defaults.scheduledAt ?? new Date().toISOString()
+  );
+  const [editMatchPlayerOne$, setEditMatchPlayerOne$] = useState(defaults.playerOneId ?? '');
+  const [editMatchPlayerTwo$, setEditMatchPlayerTwo$] = useState(defaults.playerTwoId ?? '');
+  const [editMatchStatus$, setEditMatchStatus$] = useState(defaults.status ?? 'scheduled');
+  const [editMatchOutcome$, setEditMatchOutcome$] = useState(defaults.outcome ?? 'playerOneWin');
+  const [editMatchNotes$, setEditMatchNotes$] = useState(defaults.notes ?? '');
+  const [editMatchGame$CreateOpen, setEditMatchGame$CreateOpen] = useState(false);
+  const [editMatchPlayerOne$CreateOpen, setEditMatchPlayerOne$CreateOpen] = useState(false);
+  const [editMatchPlayerTwo$CreateOpen, setEditMatchPlayerTwo$CreateOpen] = useState(false);
+  const [editMatchErrors, setEditMatchErrors] = useState<FormErrors>({});
+  const [editMatchSeededId, setEditMatchSeededId] = useState<string | null>(null);
+  const editMatchSeedKey = open ? (editing?.id ?? 'new') : null;
+  if (editMatchSeededId !== editMatchSeedKey) {
+    setEditMatchSeededId(editMatchSeedKey);
+    if (editMatchSeedKey !== null) {
+      setEditMatchGame$(editing ? editing.gameId : (defaults.gameId ?? ''));
+      setEditMatchScheduledAt$(
+        editing ? editing.scheduledAt : (defaults.scheduledAt ?? new Date().toISOString())
+      );
+      setEditMatchPlayerOne$(editing ? editing.playerOneId : (defaults.playerOneId ?? ''));
+      setEditMatchPlayerTwo$(editing ? editing.playerTwoId : (defaults.playerTwoId ?? ''));
+      setEditMatchStatus$(editing ? editing.status : (defaults.status ?? 'scheduled'));
+      setEditMatchOutcome$(editing ? editing.outcome : (defaults.outcome ?? 'playerOneWin'));
+      setEditMatchNotes$(editing ? editing.notes : (defaults.notes ?? ''));
+      setEditMatchErrors({});
     }
   }
-  async function submit(): Promise<void> {
+  async function submitEditMatch(): Promise<void> {
     const newErrors: FormErrors = {};
-    if (!game$.trim()) {
-      newErrors.game = 'Game is required.';
+    if (!editMatchGame$.trim()) {
+      newErrors.game = i18n.fill(i18n.chrome.fieldRequired, { label: i18n.word('Match.game') });
     }
-    if (!scheduledAt$.trim()) {
-      newErrors.scheduledAt = 'Date & Time is required.';
+    if (!editMatchScheduledAt$.trim()) {
+      newErrors.scheduledAt = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('Match.scheduledAt'),
+      });
     }
-    if (!playerOne$.trim()) {
-      newErrors.playerOne = 'Player 1 is required.';
+    if (!editMatchPlayerOne$.trim()) {
+      newErrors.playerOne = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('Match.playerOne'),
+      });
     }
-    if (!playerTwo$.trim()) {
-      newErrors.playerTwo = 'Player 2 is required.';
+    if (!editMatchPlayerTwo$.trim()) {
+      newErrors.playerTwo = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('Match.playerTwo'),
+      });
     }
-    setErrors(newErrors);
+    setEditMatchErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
       return;
     }
-    const data = {
-      gameId: game$,
-      scheduledAt: scheduledAt$,
-      playerOneId: playerOne$,
-      playerTwoId: playerTwo$,
-      status: status$,
-      outcome: outcome$,
-      notes: notes$,
-    };
     try {
+      const draft = {
+        gameId: editMatchGame$,
+        scheduledAt: editMatchScheduledAt$,
+        playerOneId: editMatchPlayerOne$,
+        playerTwoId: editMatchPlayerTwo$,
+        status: editMatchStatus$,
+        outcome: editMatchOutcome$,
+        notes: editMatchNotes$,
+      };
       if (onSave) {
-        await onSave(data);
+        await onSave(draft);
+      } else if (editing) {
+        await updateMatch({ ...editing, ...draft });
+        toast(i18n.chrome.itemSaved);
       } else {
-        if (editing) {
-          await matchesHook.updateMatch({ id: editing.id, ...data });
-        } else {
-          await matchesHook.createMatch(data);
-        }
-        toast(editing !== null ? 'Changes saved.' : 'Match created.');
-        await matchesHook.reloadMatches();
+        await createMatch(draft);
+        toast(i18n.fill(i18n.chrome.itemCreated, { name: i18n.word('Match') }));
+      }
+      if (!onSave) {
+        await reloadMatches();
       }
       if (onSaved) {
         onSaved();
       }
       onClose();
+      setEditMatchErrors({});
     } catch (error) {
       const fieldErrors = refusalFieldErrors(error, [
         'game',
@@ -159,197 +163,245 @@ export function MatchEditDialog({
         'notes',
       ]);
       if (fieldErrors === null) {
-        setRootError(getErrorMessage(error, 'Save failed'));
-      } else {
-        setErrors(fieldErrors);
+        throw error;
       }
+      setEditMatchErrors(fieldErrors);
     }
   }
-  const selectedLabel = editing ? 'Edit match' : 'New match';
+  if (gamesInitializing || playersInitializing) {
+    return (
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editing
+                ? i18n.fill(i18n.chrome.editLabel, { name: i18n.word('Match') })
+                : i18n.fill(i18n.chrome.newLabel, { name: i18n.word('Match') })}
+            </DialogTitle>
+            <DialogDescription>
+              {i18n.fill(i18n.chrome.editDescription, { name: i18n.word('Match') })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <div
+              role="status"
+              aria-label={i18n.chrome.loading}
+              className="rounded-xl border border-border bg-card p-4 space-y-3"
+            >
+              <Skeleton className="h-5 w-1/3" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    );
+  }
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{selectedLabel}</DialogTitle>
+          <DialogTitle>
+            {editing
+              ? i18n.fill(i18n.chrome.editLabel, { name: i18n.word('Match') })
+              : i18n.fill(i18n.chrome.newLabel, { name: i18n.word('Match') })}
+          </DialogTitle>
           <DialogDescription>
-            Fill in the match details below. Required fields are marked with an asterisk.
+            {i18n.fill(i18n.chrome.editDescription, { name: i18n.word('Match') })}
           </DialogDescription>
         </DialogHeader>
+        {editing?._sample && (
+          <p role="note" className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+            {i18n.chrome.sampleConversion}
+          </p>
+        )}
         <form
+          ref={focusFirstField}
+          className="flex flex-1 flex-col min-h-0"
           onSubmit={(submitEvent) => {
             submitEvent.preventDefault();
-            runWithToast(submit());
+            submitEvent.stopPropagation();
+            runWithToast(submitEditMatch());
           }}
         >
           <DialogBody>
-            <div data-ls="a015ebf2e5" className="space-y-6">
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(permissions, 'matches', 'gameId') && (
-                  <FormField data-ls="622ba8e006" label="Game" required error={errors.game}>
-                    <FormSelect
-                      value={game$}
-                      onChange={setGame$}
-                      options={games.map((gameTypeOption) => ({
-                        value: gameTypeOption.id,
-                        label: String(gameTypeOption.name).trim() || 'GameType',
-                      }))}
-                      placeholder="Select game..."
-                      onCreateNew={
-                        permissions?.['games']?.create
-                          ? (): void => {
-                              setGame$CreateOpen(true);
-                            }
-                          : undefined
-                      }
-                      createNewLabel="+ Create new game"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'matches',
-                  'scheduledAt'
-                ) && (
-                  <FormField
-                    data-ls="839fdcad42"
-                    label="Date &amp; Time"
-                    required
-                    error={errors.scheduledAt}
-                  >
-                    <FormDateTimePicker value={scheduledAt$} onChange={setScheduledAt$} />
-                  </FormField>
-                )}
-              </div>
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'matches',
-                  'playerOneId'
-                ) && (
-                  <FormField
-                    data-ls="4f99c48650"
-                    label="Player 1"
-                    required
-                    error={errors.playerOne}
-                  >
-                    <FormSelect
-                      value={playerOne$}
-                      onChange={setPlayerOne$}
-                      options={players.map((playerOption) => ({
-                        value: playerOption.id,
-                        label: String(playerOption.nickname).trim() || 'Player',
-                      }))}
-                      placeholder="Select player..."
-                      onCreateNew={
-                        permissions?.['players']?.create
-                          ? (): void => {
-                              setPlayerOne$CreateOpen(true);
-                            }
-                          : undefined
-                      }
-                      createNewLabel="+ Create new player"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'matches',
-                  'playerTwoId'
-                ) && (
-                  <FormField
-                    data-ls="e57526bdac"
-                    label="Player 2"
-                    required
-                    error={errors.playerTwo}
-                  >
-                    <FormSelect
-                      value={playerTwo$}
-                      onChange={setPlayerTwo$}
-                      options={players.map((playerOption) => ({
-                        value: playerOption.id,
-                        label: String(playerOption.nickname).trim() || 'Player',
-                      }))}
-                      placeholder="Select player..."
-                      onCreateNew={
-                        permissions?.['players']?.create
-                          ? (): void => {
-                              setPlayerTwo$CreateOpen(true);
-                            }
-                          : undefined
-                      }
-                      createNewLabel="+ Create new player"
-                    />
-                  </FormField>
-                )}
-              </div>
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(permissions, 'matches', 'status') && (
-                  <FormField data-ls="37cc2ba2e2" label="Status" error={errors.status}>
-                    <div className="relative">
-                      <select
-                        value={status$}
-                        onChange={(e) => {
-                          setStatus$(e.target.value);
-                        }}
-                        className={`flex h-10 w-full rounded-md border border-input bg-transparent pl-3 pr-9 py-2 text-sm ring-offset-background hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${status$ === '' ? 'text-muted-foreground' : 'text-foreground'}`}
-                      >
-                        <option value="" style={SELECT_OPTION_STYLE}>
-                          Select status...
-                        </option>
-                        <option value="scheduled" style={SELECT_OPTION_STYLE}>
-                          Scheduled
-                        </option>
-                        <option value="inProgress" style={SELECT_OPTION_STYLE}>
-                          In Progress
-                        </option>
-                        <option value="completed" style={SELECT_OPTION_STYLE}>
-                          Completed
-                        </option>
-                        <option value="disputed" style={SELECT_OPTION_STYLE}>
-                          Disputed
-                        </option>
-                        <option value="cancelled" style={SELECT_OPTION_STYLE}>
-                          Cancelled
-                        </option>
-                      </select>
-                      <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    </div>
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(permissions, 'matches', 'outcome') && (
-                  <FormField data-ls="08b00ff0fb" label="Outcome" error={errors.outcome}>
-                    <div className="relative">
-                      <select
-                        value={outcome$}
-                        onChange={(e) => {
-                          setOutcome$(e.target.value);
-                        }}
-                        className={`flex h-10 w-full rounded-md border border-input bg-transparent pl-3 pr-9 py-2 text-sm ring-offset-background hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${outcome$ === '' ? 'text-muted-foreground' : 'text-foreground'}`}
-                      >
-                        <option value="" style={SELECT_OPTION_STYLE}>
-                          Select outcome...
-                        </option>
-                        <option value="playerOneWin" style={SELECT_OPTION_STYLE}>
-                          Player 1 Victory
-                        </option>
-                        <option value="playerTwoWin" style={SELECT_OPTION_STYLE}>
-                          Player 2 Victory
-                        </option>
-                        <option value="draw" style={SELECT_OPTION_STYLE}>
-                          Draw
-                        </option>
-                      </select>
-                      <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    </div>
-                  </FormField>
-                )}
-              </div>
-              {(editing ? canUpdateField : canCreateField)(permissions, 'matches', 'notes') && (
-                <FormField data-ls="26411d7f69" label="Match Notes" error={errors.notes}>
-                  <FormRichTextEditor value={notes$} onChange={setNotes$} />
+            <div className="@container flex flex-col gap-6" data-ls="a015ebf2e5">
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+                <FormField
+                  data-ls="622ba8e006"
+                  label={i18n.word('Match.game')}
+                  required
+                  error={editMatchErrors.game}
+                >
+                  <FormSelect
+                    value={editMatchGame$}
+                    onChange={setEditMatchGame$}
+                    options={games.map((gameTypeOption) => ({
+                      value: gameTypeOption.id,
+                      label: String(gameTypeOption.name).trim() || 'GameType',
+                    }))}
+                    placeholder={i18n.fill(i18n.chrome.selectPlaceholder, {
+                      name: i18n.word('GameType'),
+                    })}
+                    onCreateNew={
+                      permissions?.['games']?.create
+                        ? (): void => {
+                            setEditMatchGame$CreateOpen(true);
+                          }
+                        : undefined
+                    }
+                    createNewLabel={i18n.fill(i18n.chrome.createNewItem, {
+                      name: i18n.word('GameType'),
+                    })}
+                  />
                 </FormField>
-              )}
-              {rootError !== null && <ErrorMessage message={rootError} />}
+                <FormField
+                  data-ls="839fdcad42"
+                  label={i18n.word('Match.scheduledAt')}
+                  required
+                  error={editMatchErrors.scheduledAt}
+                >
+                  <FormDateTimePicker
+                    value={editMatchScheduledAt$}
+                    onChange={setEditMatchScheduledAt$}
+                  />
+                </FormField>
+              </div>
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+                <FormField
+                  data-ls="4f99c48650"
+                  label={i18n.word('Match.playerOne')}
+                  required
+                  error={editMatchErrors.playerOne}
+                >
+                  <FormSelect
+                    value={editMatchPlayerOne$}
+                    onChange={setEditMatchPlayerOne$}
+                    options={players.map((playerOption) => ({
+                      value: playerOption.id,
+                      label: String(playerOption.nickname).trim() || 'Player',
+                    }))}
+                    placeholder={i18n.fill(i18n.chrome.selectPlaceholder, {
+                      name: i18n.word('Player'),
+                    })}
+                    onCreateNew={
+                      permissions?.['players']?.create
+                        ? (): void => {
+                            setEditMatchPlayerOne$CreateOpen(true);
+                          }
+                        : undefined
+                    }
+                    createNewLabel={i18n.fill(i18n.chrome.createNewItem, {
+                      name: i18n.word('Player'),
+                    })}
+                  />
+                </FormField>
+                <FormField
+                  data-ls="e57526bdac"
+                  label={i18n.word('Match.playerTwo')}
+                  required
+                  error={editMatchErrors.playerTwo}
+                >
+                  <FormSelect
+                    value={editMatchPlayerTwo$}
+                    onChange={setEditMatchPlayerTwo$}
+                    options={players.map((playerOption) => ({
+                      value: playerOption.id,
+                      label: String(playerOption.nickname).trim() || 'Player',
+                    }))}
+                    placeholder={i18n.fill(i18n.chrome.selectPlaceholder, {
+                      name: i18n.word('Player'),
+                    })}
+                    onCreateNew={
+                      permissions?.['players']?.create
+                        ? (): void => {
+                            setEditMatchPlayerTwo$CreateOpen(true);
+                          }
+                        : undefined
+                    }
+                    createNewLabel={i18n.fill(i18n.chrome.createNewItem, {
+                      name: i18n.word('Player'),
+                    })}
+                  />
+                </FormField>
+              </div>
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+                <FormField
+                  data-ls="37cc2ba2e2"
+                  label={i18n.word('Match.status')}
+                  error={editMatchErrors.status}
+                >
+                  <div className="relative">
+                    <select
+                      value={editMatchStatus$}
+                      onChange={(e) => {
+                        setEditMatchStatus$(e.target.value);
+                      }}
+                      className={`flex h-10 w-full min-w-0 rounded-md border border-input bg-transparent pl-3 pr-9 py-2 text-sm ring-offset-background hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${editMatchStatus$ === '' ? 'text-muted-foreground' : 'text-foreground'}`}
+                    >
+                      <option value="" style={SELECT_OPTION_STYLE}>
+                        {i18n.fill(i18n.chrome.selectPlaceholder, {
+                          name: i18n.word('Match.status'),
+                        })}
+                      </option>
+                      <option value="scheduled" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Scheduled'")}
+                      </option>
+                      <option value="inProgress" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'In Progress'")}
+                      </option>
+                      <option value="completed" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Completed'")}
+                      </option>
+                      <option value="disputed" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Disputed'")}
+                      </option>
+                      <option value="cancelled" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Cancelled'")}
+                      </option>
+                    </select>
+                    <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </FormField>
+                <FormField
+                  data-ls="08b00ff0fb"
+                  label={i18n.word('Match.outcome')}
+                  error={editMatchErrors.outcome}
+                >
+                  <div className="relative">
+                    <select
+                      value={editMatchOutcome$}
+                      onChange={(e) => {
+                        setEditMatchOutcome$(e.target.value);
+                      }}
+                      className={`flex h-10 w-full min-w-0 rounded-md border border-input bg-transparent pl-3 pr-9 py-2 text-sm ring-offset-background hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${editMatchOutcome$ === '' ? 'text-muted-foreground' : 'text-foreground'}`}
+                    >
+                      <option value="" style={SELECT_OPTION_STYLE}>
+                        {i18n.fill(i18n.chrome.selectPlaceholder, {
+                          name: i18n.word('Match.outcome'),
+                        })}
+                      </option>
+                      <option value="playerOneWin" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Player 1 Victory'")}
+                      </option>
+                      <option value="playerTwoWin" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Player 2 Victory'")}
+                      </option>
+                      <option value="draw" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Draw'")}
+                      </option>
+                    </select>
+                    <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </FormField>
+              </div>
+              <FormField
+                data-ls="26411d7f69"
+                label={i18n.word('Match.notes')}
+                error={editMatchErrors.notes}
+              >
+                <FormRichTextEditor value={editMatchNotes$} onChange={setEditMatchNotes$} />
+              </FormField>
             </div>
           </DialogBody>
           <DialogFooter>
@@ -359,70 +411,74 @@ export function MatchEditDialog({
               onClick={onClose}
               className="rounded-md h-10 px-4 text-sm"
             >
-              Cancel
+              {i18n.chrome.cancel}
             </Button>
-            <Button
-              type="submit"
-              data-ls="f01e28e274"
-              variant="default"
-              disabled={isBusy}
-              className="rounded-md shadow-sm h-10 px-4 text-sm"
-            >
-              {isBusy ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2Icon className="h-4 w-4 animate-spin" />
-                  {'Saving...'}
-                </span>
-              ) : editing ? (
-                'Save changes'
-              ) : (
-                'Create match'
-              )}
-            </Button>
+            {canSubmitEditMatch && (
+              <Button
+                type="submit"
+                data-ls="f01e28e274"
+                variant="default"
+                disabled={isBusy}
+                className="rounded-md shadow-sm h-10 px-4 text-sm"
+              >
+                {isBusy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2Icon className="h-4 w-4 animate-spin" />
+                    {i18n.chrome.savingIndicator}
+                  </span>
+                ) : editing?._sample ? (
+                  i18n.chrome.saveAsNormalRecord
+                ) : editing ? (
+                  i18n.chrome.saveChanges
+                ) : (
+                  i18n.fill(i18n.chrome.createItem, { name: i18n.word('Match') })
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </form>
-        {game$CreateOpen && (
+        {editMatchGame$CreateOpen && (
           <GameTypeEditDialog
-            open={game$CreateOpen}
+            open={editMatchGame$CreateOpen}
             editing={null}
-            isBusy={isBusyGameType}
+            isBusy={false}
             onClose={() => {
-              setGame$CreateOpen(false);
+              setEditMatchGame$CreateOpen(false);
             }}
             onSave={async (data) => {
               const created = await createGameType(data);
-              setGame$(created.id);
-              setGame$CreateOpen(false);
+              setEditMatchGame$(created.id);
+              setEditMatchGame$CreateOpen(false);
             }}
           />
         )}
-        {playerOne$CreateOpen && (
+        {editMatchPlayerOne$CreateOpen && (
           <PlayerEditDialog
-            open={playerOne$CreateOpen}
+            open={editMatchPlayerOne$CreateOpen}
             editing={null}
-            isBusy={isBusyPlayer}
+            isBusy={false}
             onClose={() => {
-              setPlayerOne$CreateOpen(false);
+              setEditMatchPlayerOne$CreateOpen(false);
             }}
             onSave={async (data) => {
               const created = await createPlayer(data);
-              setPlayerOne$(created.id);
-              setPlayerOne$CreateOpen(false);
+              setEditMatchPlayerOne$(created.id);
+              setEditMatchPlayerOne$CreateOpen(false);
             }}
           />
         )}
-        {playerTwo$CreateOpen && (
+        {editMatchPlayerTwo$CreateOpen && (
           <PlayerEditDialog
-            open={playerTwo$CreateOpen}
+            open={editMatchPlayerTwo$CreateOpen}
             editing={null}
-            isBusy={isBusyPlayer}
+            isBusy={false}
             onClose={() => {
-              setPlayerTwo$CreateOpen(false);
+              setEditMatchPlayerTwo$CreateOpen(false);
             }}
             onSave={async (data) => {
               const created = await createPlayer(data);
-              setPlayerTwo$(created.id);
-              setPlayerTwo$CreateOpen(false);
+              setEditMatchPlayerTwo$(created.id);
+              setEditMatchPlayerTwo$CreateOpen(false);
             }}
           />
         )}

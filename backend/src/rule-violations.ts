@@ -1,4 +1,5 @@
 import type { Queryable } from './db.js';
+import { localize, type LocalizedText } from './utils/language.js';
 
 export type RuleViolationKind = 'unique' | 'exclusive' | 'check' | 'required' | 'capacity';
 
@@ -7,7 +8,7 @@ interface CommonRule {
   label: string;
   kind: RuleViolationKind;
   identity: string;
-  message: string;
+  message: LocalizedText;
   fields: string[];
   ruleFields: string[];
 }
@@ -23,12 +24,12 @@ interface ExclusiveRule extends CommonRule {
 }
 
 interface PredicateRule extends CommonRule {
-  holds: (row: Record<string, unknown>) => boolean;
+  holds: (client: Queryable, row: Record<string, unknown>) => Promise<boolean>;
 }
 
 interface RequiredRule extends CommonRule {
   column: string;
-  appliesWhen: ((row: Record<string, unknown>) => boolean) | null;
+  appliesWhen: ((client: Queryable, row: Record<string, unknown>) => Promise<boolean>) | null;
 }
 
 interface CapacityRule extends CommonRule {
@@ -359,7 +360,8 @@ function ordinal(value: unknown, numeric: boolean): number | null {
   if (typeof value !== 'string') {
     return null;
   }
-  const instant = new Date(value).getTime();
+  const clock = /^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/.test(value);
+  const instant = new Date(clock ? `1970-01-01T${value}Z` : value).getTime();
   return Number.isNaN(instant) ? null : instant;
 }
 
@@ -398,20 +400,20 @@ function overlappingIds(rows: Row[], rule: ExclusiveRule): string[] {
   return [...flagged];
 }
 
-function failingIds(rows: Row[], rule: PredicateRule): string[] {
+async function failingIds(client: Queryable, rows: Row[], rule: PredicateRule): Promise<string[]> {
   const flagged: string[] = [];
   for (const row of rows) {
-    if (rule.fields.every((field) => !isUnset(row[field])) && !rule.holds(row)) {
+    if (rule.fields.every((field) => !isUnset(row[field])) && !(await rule.holds(client, row))) {
       flagged.push(String(row['id']));
     }
   }
   return flagged;
 }
 
-function unmetIds(rows: Row[], rule: RequiredRule): string[] {
+async function unmetIds(client: Queryable, rows: Row[], rule: RequiredRule): Promise<string[]> {
   const flagged: string[] = [];
   for (const row of rows) {
-    const applies = rule.appliesWhen === null || rule.appliesWhen(row);
+    const applies = rule.appliesWhen === null || (await rule.appliesWhen(client, row));
     if (applies && isEmptyValue(row[rule.column])) {
       flagged.push(String(row['id']));
     }
@@ -419,11 +421,12 @@ function unmetIds(rows: Row[], rule: RequiredRule): string[] {
   return flagged;
 }
 
-function scanRows(
+async function scanRows(
+  client: Queryable,
   rules: TableRules,
   rows: Row[],
   kinds: readonly RuleViolationKind[]
-): ScannedGroup[] {
+): Promise<ScannedGroup[]> {
   const scanned: ScannedGroup[] = [];
   if (kinds.includes('unique')) {
     for (const rule of rules.unique) {
@@ -443,7 +446,7 @@ function scanRows(
   }
   if (kinds.includes('check')) {
     for (const rule of rules.check) {
-      const ids = failingIds(rows, rule);
+      const ids = await failingIds(client, rows, rule);
       if (ids.length > 0) {
         scanned.push({ rule, limit: 0, count: ids.length, ids });
       }
@@ -451,7 +454,7 @@ function scanRows(
   }
   if (kinds.includes('required')) {
     for (const rule of rules.required) {
-      const ids = unmetIds(rows, rule);
+      const ids = await unmetIds(client, rows, rule);
       if (ids.length > 0) {
         scanned.push({ rule, limit: 0, count: ids.length, ids });
       }
@@ -470,7 +473,7 @@ function shownGroup(entry: ScannedGroup, count: number): ShownRuleViolationGroup
     label: entry.rule.label,
     kind: entry.rule.kind,
     identity: entry.rule.identity,
-    message: entry.rule.message,
+    message: localize(entry.rule.message),
     fields: entry.rule.fields,
     count,
     limit: entry.limit,
@@ -483,7 +486,12 @@ export async function collectRuleViolations(
 ): Promise<ShownRuleViolationGroup[]> {
   const groups: ShownRuleViolationGroup[] = [];
   for (const [table, rules] of RULE_TABLES) {
-    for (const entry of scanRows(rules, await tableRows(client, table, rules), kinds)) {
+    for (const entry of await scanRows(
+      client,
+      rules,
+      await tableRows(client, table, rules),
+      kinds
+    )) {
       groups.push(shownGroup(entry, entry.count));
     }
   }
@@ -500,15 +508,7 @@ function fieldsAreReadable(rule: CommonRule, readableFields: ReadonlySet<string>
   return rule.ruleFields.every((field) => readableFields.has(field));
 }
 
-function reportedCount(
-  entry: ScannedGroup,
-  visible: number,
-  wholeTable: boolean,
-  readableFields: ReadonlySet<string> | null
-): number | null {
-  if (!fieldsAreReadable(entry.rule, readableFields)) {
-    return null;
-  }
+function reportedCount(entry: ScannedGroup, visible: number, wholeTable: boolean): number | null {
   switch (entry.rule.kind) {
     case 'unique':
     case 'exclusive':
@@ -523,25 +523,38 @@ function reportedCount(
   }
 }
 
+function readableIds(
+  entry: ScannedGroup,
+  visibleColumns: ReadonlyMap<string, ReadonlySet<string> | null>
+): string[] {
+  const readable: string[] = [];
+  for (const id of entry.ids) {
+    const columns = visibleColumns.get(id);
+    if (columns !== undefined && fieldsAreReadable(entry.rule, columns)) {
+      readable.push(id);
+    }
+  }
+  return readable;
+}
+
 export async function collectVisibleRuleViolations(
   client: Queryable,
   table: string,
-  visibleIds: ReadonlySet<string>,
-  readableFields: ReadonlySet<string> | null
+  visibleColumns: ReadonlyMap<string, ReadonlySet<string> | null>
 ): Promise<RuleViolationRows> {
   const rules = RULE_TABLES.get(table);
   if (rules === undefined) {
     return { groups: [], rows: [], ruleSetVersion: '' };
   }
   const stored = await tableRows(client, table, rules);
-  const scanned = scanRows(rules, stored, ALL_KINDS);
-  const seen = stored.filter((row) => visibleIds.has(String(row['id']))).length;
+  const scanned = await scanRows(client, rules, stored, ALL_KINDS);
+  const seen = stored.filter((row) => visibleColumns.has(String(row['id']))).length;
   const wholeTable = seen === stored.length;
   const groups: ShownRuleViolationGroup[] = [];
   const marked = new Map<string, number[]>();
   for (const entry of scanned) {
-    const visible = entry.ids.filter((id) => visibleIds.has(id));
-    const reported = reportedCount(entry, visible.length, wholeTable, readableFields);
+    const visible = readableIds(entry, visibleColumns);
+    const reported = reportedCount(entry, visible.length, wholeTable);
     if (reported !== null) {
       const index = groups.length;
       groups.push(shownGroup(entry, reported));

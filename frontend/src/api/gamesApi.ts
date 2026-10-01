@@ -24,7 +24,7 @@ export const gamesApi = {
     return httpClient.get<string[]>('/games');
   },
   multiGet(ids: string[]): Promise<$Domain.GameType[]> {
-    return httpClient.query<$Domain.GameType[]>('/games/multi-get', { ids });
+    return httpClient.records<$Domain.GameType>('/games/multi-get', ids);
   },
   query(request: QueryRequest): Promise<QueryPage> {
     return httpClient.query<QueryPage>('/games/query', request);

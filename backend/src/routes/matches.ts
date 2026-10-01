@@ -22,7 +22,6 @@ import {
   projectReadableFields,
   writtenColumns,
   queryableFieldSet,
-  readableFieldSet,
   unwritableField,
   ownedFlag,
   type Caller,
@@ -32,10 +31,10 @@ import {
 } from '../authorization.js';
 import { withTransaction } from '../transaction.js';
 import { auth } from '../auth.js';
-import { ensureReferences } from '../references.js';
+import { nothingStored, storedColumns, unreadableReference } from '../reference-access.js';
 import { isBlankOrDateText } from '../validation.js';
 import { assignedColumns, mergedCandidate, storedTemporal } from '../record-writes.js';
-import { enforceMatchConstraints } from '../constraints.js';
+import { enforceMatchConstraints, ConstraintViolationError, formattedRow } from '../constraints.js';
 import { collectVisibleRuleViolations } from '../rule-violations.js';
 import { deriveMatch, deriveMatchRows } from '../derived.js';
 
@@ -47,13 +46,13 @@ function getSession(request: Request): ReturnType<typeof auth.api.getSession> {
 
 interface Body {
   [key: string]: unknown;
-  gameId: string;
-  playerOneId: string;
-  playerTwoId: string;
-  scheduledAt: string;
-  status: string;
-  outcome: string;
-  notes: string;
+  gameId?: string;
+  playerOneId?: string;
+  playerTwoId?: string;
+  scheduledAt?: string;
+  status?: string;
+  outcome?: string;
+  notes?: string;
 }
 
 function isBody(value: unknown): value is Body {
@@ -61,19 +60,24 @@ function isBody(value: unknown): value is Body {
     return false;
   }
   const body = value as Record<string, unknown>;
-  if (!(typeof body['gameId'] === 'string')) {
+  if (!(body['gameId'] === undefined || typeof body['gameId'] === 'string')) {
     return false;
   }
-  if (!(typeof body['playerOneId'] === 'string')) {
+  if (!(body['playerOneId'] === undefined || typeof body['playerOneId'] === 'string')) {
     return false;
   }
-  if (!(typeof body['playerTwoId'] === 'string')) {
-    return false;
-  }
-  if (!(body['scheduledAt'] === '' || isBlankOrDateText(body['scheduledAt']))) {
+  if (!(body['playerTwoId'] === undefined || typeof body['playerTwoId'] === 'string')) {
     return false;
   }
   if (!(
+    body['scheduledAt'] === undefined ||
+    body['scheduledAt'] === '' ||
+    isBlankOrDateText(body['scheduledAt'])
+  )) {
+    return false;
+  }
+  if (!(
+    body['status'] === undefined ||
     body['status'] === '' ||
     (typeof body['status'] === 'string' &&
       ['scheduled', 'inProgress', 'completed', 'disputed', 'cancelled'].includes(body['status']))
@@ -81,13 +85,14 @@ function isBody(value: unknown): value is Body {
     return false;
   }
   if (!(
+    body['outcome'] === undefined ||
     body['outcome'] === '' ||
     (typeof body['outcome'] === 'string' &&
       ['playerOneWin', 'playerTwoWin', 'draw'].includes(body['outcome']))
   )) {
     return false;
   }
-  if (!(typeof body['notes'] === 'string')) {
+  if (!(body['notes'] === undefined || typeof body['notes'] === 'string')) {
     return false;
   }
   return true;
@@ -248,6 +253,10 @@ matchesRouter.post('/multi-get', async (request, response) => {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
+  if (body.ids.length > 200) {
+    response.status(400).json({ error: 'ids must list at most 200 records' });
+    return;
+  }
   if (body.ids.length === 0) {
     response.json([]);
     return;
@@ -287,7 +296,8 @@ matchesRouter.get('/:id', async (request, response) => {
 async function createMatchRecord(
   response: RefusalAnswer,
   body: Record<string, unknown>,
-  owner: string
+  owner: string,
+  caller: Caller
 ): Promise<Record<string, unknown> | undefined> {
   if (!isBody(body)) {
     response.status(400).json({ error: 'Invalid request body' });
@@ -309,15 +319,36 @@ async function createMatchRecord(
       return;
     }
   }
-  const typedBody: Body = body;
-  const referenceError = await ensureReferences('Match', typedBody, [
-    { field: 'gameId', table: 'GameType' },
-    { field: 'playerOneId', table: 'Player' },
-    { field: 'playerTwoId', table: 'Player' },
-  ]);
-  if (referenceError !== null) {
-    response.status(400).json({ error: referenceError });
-    return;
+  const typedBody: Body = formattedRow('Match', {
+    ...body,
+    gameId: body.gameId ?? '',
+    playerOneId: body.playerOneId ?? '',
+    playerTwoId: body.playerTwoId ?? '',
+    scheduledAt:
+      body.scheduledAt === undefined || body.scheduledAt === ''
+        ? new Date().toISOString()
+        : body.scheduledAt,
+    status: body.status === undefined || body.status === '' ? 'scheduled' : body.status,
+    outcome: body.outcome === undefined || body.outcome === '' ? 'playerOneWin' : body.outcome,
+    notes: body.notes ?? '',
+  });
+  const unreadableField = await unreadableReference(
+    [typedBody],
+    [
+      { field: 'gameId', table: 'GameType' },
+      { field: 'playerOneId', table: 'Player' },
+      { field: 'playerTwoId', table: 'Player' },
+      { field: 'recordedById', table: 'user' },
+    ],
+    caller,
+    nothingStored
+  );
+  if (unreadableField !== null) {
+    throw new ConstraintViolationError({
+      kind: 'referenceGone',
+      type: 'Match',
+      field: unreadableField,
+    });
   }
   enforceMatchConstraints(typedBody);
   const id = crypto.randomUUID();
@@ -331,9 +362,9 @@ async function createMatchRecord(
           typedBody.gameId,
           typedBody.playerOneId,
           typedBody.playerTwoId,
-          typedBody.scheduledAt === '' ? new Date().toISOString() : typedBody.scheduledAt,
-          typedBody.status === '' ? 'scheduled' : typedBody.status,
-          typedBody.outcome === '' ? 'playerOneWin' : typedBody.outcome,
+          storedTemporal(typedBody.scheduledAt),
+          typedBody.status,
+          typedBody.outcome,
           typedBody.notes,
           0,
           0,
@@ -360,8 +391,26 @@ matchesRouter.post('/', async (request, response) => {
   }
   const body = request.body as Record<string, unknown>;
   if (typeof body['recordId'] === 'string') {
+    const recordValues: unknown[] = [body['recordId']];
+    const recordAdmission = hasGrant('matches', 'read', access.roles)
+      ? admissionClause('matches', 'read', access, 'f', recordValues)
+      : 'FALSE';
+    const readableRecord = await pool.query(
+      `SELECT 1 FROM "Match" f${whereClause(['f.id = $1', recordAdmission])}`,
+      recordValues
+    );
+    if (readableRecord.rows.length === 0) {
+      response.status(404).json({ error: 'Record not found' });
+      return;
+    }
+    if (access.userId === null) {
+      response
+        .status(401)
+        .json({ error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED' });
+      return;
+    }
     const claimedId = body['recordId'];
-    const claimant = access.userId ?? '';
+    const claimant = access.userId;
     const claimed = await withTransaction<'ok' | 'missing' | 'owned'>(
       pool,
       async (client): Promise<'ok' | 'missing' | 'owned'> => {
@@ -395,7 +444,7 @@ matchesRouter.post('/', async (request, response) => {
     response.status(201).json({ success: true });
     return;
   }
-  const createdRow = await createMatchRecord(response, body, access.userId ?? '');
+  const createdRow = await createMatchRecord(response, body, access.userId ?? '', access);
   if (createdRow === undefined) {
     return;
   }
@@ -433,14 +482,29 @@ matchesRouter.put('/:id', async (request, response) => {
       return;
     }
   }
-  const referenceError = await ensureReferences('Match', body, [
-    { field: 'gameId', table: 'GameType' },
-    { field: 'playerOneId', table: 'Player' },
-    { field: 'playerTwoId', table: 'Player' },
-  ]);
-  if (referenceError !== null) {
-    response.status(400).json({ error: referenceError });
-    return;
+  const unreadableField = await unreadableReference(
+    [body],
+    [
+      { field: 'gameId', table: 'GameType' },
+      { field: 'playerOneId', table: 'Player' },
+      { field: 'playerTwoId', table: 'Player' },
+      { field: 'recordedById', table: 'user' },
+    ],
+    access,
+    () =>
+      storedColumns('Match', request.params.id, [
+        'gameId',
+        'playerOneId',
+        'playerTwoId',
+        'recordedById',
+      ])
+  );
+  if (unreadableField !== null) {
+    throw new ConstraintViolationError({
+      kind: 'referenceGone',
+      type: 'Match',
+      field: unreadableField,
+    });
   }
   const outcome = await withTransaction<WriteOutcome>(
     pool,
@@ -538,18 +602,17 @@ matchesViolationsRouter.get('/', async (request, response) => {
     return;
   }
   const values: unknown[] = [];
+  const owned = ownedColumn('matches', 'read', access, 'f', values);
   const admission = admissionClause('matches', 'read', access, 'f', values);
   const { rows } = await pool.query<Record<string, unknown>>(
-    `SELECT f.id FROM "Match" f${whereClause([admission])}`,
+    `SELECT f.*, ${owned} FROM "Match" f${whereClause([admission])}`,
     values
   );
-  const visibleIds = rows.map((row) => String(row.id));
   response.json(
     await collectVisibleRuleViolations(
       pool,
       'Match',
-      new Set(visibleIds),
-      readableFieldSet('matches', access.roles)
+      admitRows('matches', 'read', access.roles, rows)
     )
   );
 });

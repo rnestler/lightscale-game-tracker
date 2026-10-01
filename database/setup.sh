@@ -69,13 +69,8 @@ if ! resolve_admin; then
   exit 1
 fi
 
-INCLUDES_DATA=false
-if [ -f "$SCRIPT_DIR/data.sql" ]; then
-  INCLUDES_DATA=true
-fi
-
 echo "Creating database and user..."
-"${ADMIN[@]}" -w -v ON_ERROR_STOP=1 -v includes_data="$INCLUDES_DATA" -d "$DB_ADMIN_DATABASE" -f - < "$SCRIPT_DIR/setup.sql"
+"${ADMIN[@]}" -w -v ON_ERROR_STOP=1 -d "$DB_ADMIN_DATABASE" -f - < "$SCRIPT_DIR/setup.sql"
 
 echo ""
 echo "Done. Next: npm run migrate, then npm run setup:auth."

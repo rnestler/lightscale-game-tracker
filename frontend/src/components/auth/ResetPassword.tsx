@@ -1,12 +1,14 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { authClient } from '../../api/authClient.js';
+import { navigateToPath, openSignIn } from '../../utils/recordNavigation.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 
-const MIN_PASSWORD_LENGTH = 8;
+const MIN_PASSWORD_LENGTH = 10;
 
 function readResetToken(): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -30,15 +32,15 @@ export function ResetPassword(): JSX.Element {
     setError(null);
 
     if (token === null) {
-      setError('This password reset link is invalid or has expired. Request a new one.');
+      setError(i18n.chrome.resetPasswordInvalidLink);
       return;
     }
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError('Your new password must be at least 8 characters.');
+      setError(i18n.chrome.passwordTooShort);
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('The new password and its confirmation do not match.');
+      setError(i18n.chrome.passwordsDoNotMatch);
       return;
     }
 
@@ -46,17 +48,12 @@ export function ResetPassword(): JSX.Element {
     try {
       const result = await authClient.resetPassword({ newPassword, token });
       if (result.error) {
-        setError('Could not reset your password. The link may have expired — request a new one.');
+        setError(i18n.chrome.resetPasswordFailed);
       } else {
         setDone(true);
       }
     } catch (err) {
-      setError(
-        getErrorMessage(
-          err,
-          'Could not reset your password. The link may have expired — request a new one.'
-        )
-      );
+      setError(getErrorMessage(err, i18n.chrome.resetPasswordFailed));
       console.error('Failed to reset password', err);
     } finally {
       setIsLoading(false);
@@ -72,17 +69,17 @@ export function ResetPassword(): JSX.Element {
     return (
       <div className="flex flex-col gap-6">
         <div className="rounded-lg border border-border bg-secondary p-3 text-sm text-foreground">
-          Your password has been reset. You can now sign in with your new password.
+          {i18n.chrome.resetPasswordSuccess}
         </div>
         <Button
           type="button"
           onClick={() => {
-            window.location.href = '/login';
+            openSignIn();
           }}
           className="bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-primary"
           size="lg"
         >
-          Go to sign in
+          {i18n.chrome.goToSignIn}
         </Button>
       </div>
     );
@@ -92,17 +89,17 @@ export function ResetPassword(): JSX.Element {
     return (
       <div className="flex flex-col gap-6">
         <div className="rounded-lg border border-border bg-secondary p-3 text-sm text-foreground">
-          This password reset link is invalid or has expired. Request a new one.
+          {i18n.chrome.resetPasswordInvalidLink}
         </div>
         <Button
           type="button"
           variant="ghost"
           onClick={() => {
-            window.location.href = '/forgot-password';
+            navigateToPath('/forgot-password');
           }}
           className="text-foreground hover:opacity-80 focus-visible:outline-primary"
         >
-          Reset password
+          {i18n.chrome.forgotPasswordTitle}
         </Button>
       </div>
     );
@@ -117,7 +114,7 @@ export function ResetPassword(): JSX.Element {
     >
       <div className="flex flex-col gap-2">
         <label htmlFor="newPassword" className="text-sm font-medium text-foreground">
-          New Password
+          {i18n.chrome.newPasswordLabel}
         </label>
         <div className="relative">
           <Input
@@ -139,7 +136,7 @@ export function ResetPassword(): JSX.Element {
             }}
             className={toggleClass}
             tabIndex={-1}
-            aria-label={showPasswords ? 'Hide' : 'Show'}
+            aria-label={showPasswords ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
           >
             {showPasswords ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
@@ -148,7 +145,7 @@ export function ResetPassword(): JSX.Element {
 
       <div className="flex flex-col gap-2">
         <label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">
-          Confirm New Password
+          {i18n.chrome.confirmNewPasswordLabel}
         </label>
         <div className="relative">
           <Input
@@ -170,7 +167,7 @@ export function ResetPassword(): JSX.Element {
             }}
             className={toggleClass}
             tabIndex={-1}
-            aria-label={showPasswords ? 'Hide' : 'Show'}
+            aria-label={showPasswords ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
           >
             {showPasswords ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
@@ -189,7 +186,7 @@ export function ResetPassword(): JSX.Element {
         className="bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-primary"
         size="lg"
       >
-        {isLoading ? 'Resetting…' : 'Reset password'}
+        {isLoading ? i18n.chrome.resetPasswordSaving : i18n.chrome.resetPasswordSubmit}
       </Button>
     </form>
   );

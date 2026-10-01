@@ -1,74 +1,75 @@
+import { i18n } from '../i18n/text';
 interface RecordNames {
-  one: string;
-  many: string;
-  fields: Readonly<Partial<Record<string, string>>>;
+  one: () => string;
+  many: () => string;
+  fields: Readonly<Partial<Record<string, () => string>>>;
 }
 
 const RECORD_NAMES: Readonly<Partial<Record<string, RecordNames>>> = {
   GameType: {
-    one: 'Game',
-    many: 'Games',
+    one: (): string => i18n.word('GameType'),
+    many: (): string => i18n.word('GameType', 1),
     fields: {
-      id: 'Id',
-      name: 'Game Name',
-      category: 'Category',
-      rulesVariant: 'Variant / Ruleset',
-      defaultRating: 'Starting Rating (Default 1200)',
-      description: 'Overview & Rules',
-      displayName: 'Display Name',
-      leaderboard: 'Game Leaderboard',
+      id: (): string => 'Id',
+      name: (): string => i18n.word('GameType.name'),
+      category: (): string => i18n.word('GameType.category'),
+      rulesVariant: (): string => i18n.word('GameType.rulesVariant'),
+      defaultRating: (): string => i18n.word('GameType.defaultRating'),
+      description: (): string => i18n.word('GameType.description'),
+      displayName: (): string => i18n.word('GameType.displayName'),
+      leaderboard: (): string => i18n.word('GameType.leaderboard'),
     },
   },
   Player: {
-    one: 'Player',
-    many: 'Players',
+    one: (): string => i18n.word('Player'),
+    many: (): string => i18n.word('Player', 1),
     fields: {
-      id: 'Id',
-      nickname: 'Nickname / Handle',
-      fullName: 'Full Name',
-      emailAddress: 'Email Address',
-      avatar: 'Avatar',
-      bio: 'Player Bio',
-      joinedDate: 'Member Since',
-      userAccountId: 'Linked User',
+      id: (): string => 'Id',
+      nickname: (): string => i18n.word('Player.nickname'),
+      fullName: (): string => i18n.word('Player.fullName'),
+      emailAddress: (): string => i18n.word('Player.emailAddress'),
+      avatar: (): string => i18n.word('Player.avatar'),
+      bio: (): string => i18n.word('Player.bio'),
+      joinedDate: (): string => i18n.word('Player.joinedDate'),
+      userAccountId: (): string => i18n.word('Player.userAccount'),
     },
   },
   LeaderboardEntry: {
-    one: 'Leaderboard Entry',
-    many: 'Leaderboard Entries',
+    one: (): string => i18n.word('LeaderboardEntry'),
+    many: (): string => i18n.word('LeaderboardEntry', 1),
     fields: {
-      id: 'Id',
-      playerId: 'Player',
-      gameId: 'Game',
-      rating: 'Current Rating',
-      matchesPlayed: 'Matches Played',
-      wins: 'Wins',
-      losses: 'Losses',
-      draws: 'Draws',
-      lastPlayedAt: 'Last Activity',
-      playerNickname: 'Player Nickname',
+      id: (): string => 'Id',
+      playerId: (): string => i18n.word('LeaderboardEntry.player'),
+      gameId: (): string => i18n.word('LeaderboardEntry.game'),
+      rating: (): string => i18n.word('LeaderboardEntry.rating'),
+      matchesPlayed: (): string => i18n.word('LeaderboardEntry.matchesPlayed'),
+      wins: (): string => i18n.word('LeaderboardEntry.wins'),
+      losses: (): string => i18n.word('LeaderboardEntry.losses'),
+      draws: (): string => i18n.word('LeaderboardEntry.draws'),
+      lastPlayedAt: (): string => i18n.word('LeaderboardEntry.lastPlayedAt'),
+      playerNickname: (): string => i18n.word('LeaderboardEntry.playerNickname'),
     },
   },
   Match: {
-    one: 'Match',
-    many: 'Matches',
+    one: (): string => i18n.word('Match'),
+    many: (): string => i18n.word('Match', 1),
     fields: {
-      id: 'Id',
-      gameId: 'Game',
-      playerOneId: 'Player 1',
-      playerTwoId: 'Player 2',
-      scheduledAt: 'Date & Time',
-      status: 'Status',
-      outcome: 'Outcome',
-      playerOneScore: 'P1 Score',
-      playerTwoScore: 'P2 Score',
-      playerOneRatingDelta: 'P1 Rating Change',
-      playerTwoRatingDelta: 'P2 Rating Change',
-      notes: 'Match Notes',
-      recordedById: 'Recorder',
-      createdAt: 'Created At',
-      title: 'Match Matchup',
-      gameDisplayName: 'Game Display Name',
+      id: (): string => 'Id',
+      gameId: (): string => i18n.word('Match.game'),
+      playerOneId: (): string => i18n.word('Match.playerOne'),
+      playerTwoId: (): string => i18n.word('Match.playerTwo'),
+      scheduledAt: (): string => i18n.word('Match.scheduledAt'),
+      status: (): string => i18n.word('Match.status'),
+      outcome: (): string => i18n.word('Match.outcome'),
+      playerOneScore: (): string => i18n.word('Match.playerOneScore'),
+      playerTwoScore: (): string => i18n.word('Match.playerTwoScore'),
+      playerOneRatingDelta: (): string => i18n.word('Match.playerOneRatingDelta'),
+      playerTwoRatingDelta: (): string => i18n.word('Match.playerTwoRatingDelta'),
+      notes: (): string => i18n.word('Match.notes'),
+      recordedById: (): string => i18n.word('Match.recordedBy'),
+      createdAt: (): string => i18n.word('Match.createdAt'),
+      title: (): string => i18n.word('Match.title'),
+      gameDisplayName: (): string => i18n.word('Match.gameDisplayName'),
     },
   },
 };
@@ -82,11 +83,11 @@ function namesOf(type: string): RecordNames {
 }
 
 export function recordName(type: string): string {
-  return namesOf(type).one;
+  return namesOf(type).one();
 }
 
 export function recordPlural(type: string): string {
-  return namesOf(type).many;
+  return namesOf(type).many();
 }
 
 export function fieldLabel(type: string, field: string): string {
@@ -94,7 +95,7 @@ export function fieldLabel(type: string, field: string): string {
   if (label === undefined) {
     throw new Error(`No name for field '${field}' of record type '${type}'`);
   }
-  return label;
+  return label();
 }
 
 export function fieldLabels(type: string, fields: readonly string[]): string {

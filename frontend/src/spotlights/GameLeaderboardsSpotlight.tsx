@@ -1,5 +1,6 @@
-import { Fragment, useState, useEffect, type JSX } from 'react';
-import { BarChart, Bar, LabelList, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { i18n } from '../i18n/text';
+import { Fragment, useState, useEffect, useSyncExternalStore, type JSX } from 'react';
+import { BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '../components/ui/chart';
 import { useGames } from '../hooks/useGames';
 import { leaderboardsApi } from '../api/leaderboardsApi';
@@ -9,16 +10,48 @@ import type * as $Domain from '../types/domain';
 import { DicesIcon } from 'lucide-react';
 import { MetricValue } from '../components/ui/MetricValue';
 import { RichTextDisplay } from '../components/ui/form-field';
+import { referenceStore } from '../api/referenceStore';
 import { SelectCard, SelectCards } from '../components/ui/card-select';
 
-const chartValueFormat = new Intl.NumberFormat('en', {
-  notation: 'compact',
-  maximumFractionDigits: 1,
-});
+const chartSwatches = [
+  'var(--series-1)',
+  'var(--series-2)',
+  'var(--series-3)',
+  'var(--series-4)',
+  'var(--series-5)',
+  'var(--series-6)',
+  'var(--series-7)',
+  'var(--series-8)',
+  'var(--series-9)',
+  'var(--series-10)',
+];
+
+function chartSwatch(index: number): string {
+  return chartSwatches[index % chartSwatches.length] ?? 'var(--series-1)';
+}
+
+function chartCategories<T extends { name: string }>(
+  rows: T[],
+  order: readonly string[],
+  labels: Record<string, string>,
+  colors: Record<string, string>
+): Array<T & { color: string }> {
+  const ordered =
+    order.length === 0
+      ? rows
+      : [...rows].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+  return ordered.map((row, index) => ({
+    ...row,
+    name: labels[row.name] ?? row.name,
+    color: colors[row.name] ?? chartSwatch(index),
+  }));
+}
 
 function chartValueLabel(value: unknown): string {
   return typeof value === 'number'
-    ? chartValueFormat.format(value)
+    ? new Intl.NumberFormat(i18n.locale, { notation: 'compact', maximumFractionDigits: 1 }).format(
+        value
+      )
     : typeof value === 'string'
       ? value
       : '';
@@ -48,6 +81,7 @@ export function GameLeaderboardsSpotlight(_props: {
     errorMessage: gamesError,
     total: gamesTotal,
   } = useGames();
+  const storeRevision = useSyncExternalStore(referenceStore.subscribe, referenceStore.revision);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected =
     games.find((each) => each.id === selectedId) ??
@@ -60,26 +94,36 @@ export function GameLeaderboardsSpotlight(_props: {
     if (selectedLeaderboardParent === null) {
       return;
     }
+    let current = true;
     leaderboardsApi
       .list()
       .then((ids) => leaderboardsApi.multiGet(ids))
       .then((entries) => {
+        if (!current) {
+          return;
+        }
         setSelectedLeaderboard(
           entries.filter((entry) => entry.gameId === selectedLeaderboardParent)
         );
         setSelectedLeaderboardError(null);
       })
       .catch((error: unknown) => {
+        if (!current) {
+          return;
+        }
         setSelectedLeaderboardError(getErrorMessage(error));
       });
-  }, [selectedLeaderboardParent]);
+    return (): void => {
+      current = false;
+    };
+  }, [selectedLeaderboardParent, storeRevision]);
   return (
     <>
       {selectedLeaderboardError !== null && <ErrorMessage message={selectedLeaderboardError} />}
-      <div className="@container flex flex-col w-full" aria-label="Leaderboards by Game">
+      <div className="@container flex flex-col w-full" aria-label={i18n.word('gameLeaderboards')}>
         {gamesTotal === 0 && !gamesInitializing && !(gamesError !== null) ? (
-          <span className="break-words text-base font-medium text-muted-foreground p-12">
-            {'No games yet'}
+          <span className="min-w-min text-base font-medium text-muted-foreground p-12">
+            {i18n.fill(i18n.chrome.noEntriesTitle, { name: i18n.word('GameType', 1) })}
           </span>
         ) : null}
         <SelectCards
@@ -87,20 +131,20 @@ export function GameLeaderboardsSpotlight(_props: {
           onSelect={setSelectedId}
           className="@container flex flex-row gap-6 items-start w-full @max-md:flex @max-md:flex-col"
         >
-          <div className="flex flex-col gap-2 w-64 shrink-0 @max-md:flex @max-md:flex-row @max-md:w-full @max-md:min-w-0 @max-md:overflow-auto">
+          <div className="flex flex-col gap-2 w-64 shrink-0 min-w-0 @max-md:flex @max-md:flex-row @max-md:w-full @max-md:min-w-0 @max-md:overflow-auto">
             {[...games]
               .sort((a, b) => String(a.name).localeCompare(String(b.name)))
               .map((gameType) => (
                 <Fragment key={gameType.id}>
                   <SelectCard
                     id={gameType.id}
-                    className="flex flex-col gap-3 p-4 rounded-xl bg-card shadow-sm border border-border @max-md:shrink-0"
+                    className="overflow-x-auto flex flex-col gap-3 p-4 rounded-xl bg-card shadow-sm border border-border @max-md:shrink-0"
                   >
                     <div className="flex flex-row items-start gap-3">
                       <div className="w-11 h-11 rounded-lg bg-primary/10 text-foreground flex items-center justify-center flex-shrink-0">
                         <DicesIcon className="h-5 w-5" />
                       </div>
-                      <span className="break-words text-lg font-medium tracking-tight flex-1">
+                      <span className="min-w-min text-lg font-medium tracking-tight line-clamp-2 flex-1">
                         {gameType.displayName}
                       </span>
                     </div>
@@ -112,13 +156,13 @@ export function GameLeaderboardsSpotlight(_props: {
                           >
                             <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
                             {new Map([
-                              ['chess', 'Chess & Variants'],
-                              ['billiards', 'Billiards / Pool'],
-                              ['tableTennis', 'Table Tennis'],
-                              ['darts', 'Darts'],
-                              ['boardGames', 'Board Games'],
-                              ['cardGames', 'Card Games'],
-                              ['custom', 'Custom / Other'],
+                              ['chess', i18n.word("'Chess & Variants'")],
+                              ['billiards', i18n.word("'Billiards / Pool'")],
+                              ['tableTennis', i18n.word("'Table Tennis'")],
+                              ['darts', i18n.word("'Darts'")],
+                              ['boardGames', i18n.word("'Board Games'")],
+                              ['cardGames', i18n.word("'Card Games'")],
+                              ['custom', i18n.word("'Custom / Other'")],
                             ]).get(gameType.category) ?? gameType.category}
                           </span>
                         )}
@@ -126,7 +170,7 @@ export function GameLeaderboardsSpotlight(_props: {
                     ) : null}
                     {gameType.rulesVariant ? (
                       <div className="flex flex-row items-center gap-1.5 overflow-hidden">
-                        <span className="break-words text-sm text-muted-foreground truncate">
+                        <span className="text-sm text-muted-foreground truncate min-w-0">
                           {gameType.rulesVariant}
                         </span>
                       </div>
@@ -135,13 +179,13 @@ export function GameLeaderboardsSpotlight(_props: {
                 </Fragment>
               ))}
           </div>
-          <div className="flex flex-col flex-1 @max-md:w-full">
+          <div className="flex flex-col flex-1 min-w-0 @max-md:w-full">
             {selected ? (
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-6 p-6">
                   <div className="flex flex-col gap-2">
                     <div className="flex flex-row items-center justify-between">
-                      <span className="break-words text-lg font-semibold tracking-tight">
+                      <span className="min-w-min text-lg font-semibold tracking-tight">
                         {selected.name}
                       </span>
                       {selected.category && (
@@ -150,62 +194,68 @@ export function GameLeaderboardsSpotlight(_props: {
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
                           {new Map([
-                            ['chess', 'Chess & Variants'],
-                            ['billiards', 'Billiards / Pool'],
-                            ['tableTennis', 'Table Tennis'],
-                            ['darts', 'Darts'],
-                            ['boardGames', 'Board Games'],
-                            ['cardGames', 'Card Games'],
-                            ['custom', 'Custom / Other'],
+                            ['chess', i18n.word("'Chess & Variants'")],
+                            ['billiards', i18n.word("'Billiards / Pool'")],
+                            ['tableTennis', i18n.word("'Table Tennis'")],
+                            ['darts', i18n.word("'Darts'")],
+                            ['boardGames', i18n.word("'Board Games'")],
+                            ['cardGames', i18n.word("'Card Games'")],
+                            ['custom', i18n.word("'Custom / Other'")],
                           ]).get(selected.category) ?? selected.category}
                         </span>
                       )}
                     </div>
                     <div className="flex flex-row items-center gap-2">
-                      <span className="break-words text-sm text-muted-foreground">
-                        {'Variant / Ruleset:'}
+                      <span className="min-w-min text-sm text-muted-foreground">
+                        {i18n.word("'Variant / Ruleset:'")}
                       </span>
-                      <span className="break-words text-sm font-semibold">
+                      <span className="min-w-min text-sm font-semibold">
                         {selected.rulesVariant}
                       </span>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2 p-4 rounded-lg bg-muted/30 border border-border">
-                    <span className="break-words text-base font-medium">{'Overview & Rules'}</span>
-                    <RichTextDisplay value={selected.description} className="break-words text-sm" />
+                  <div className="overflow-x-auto flex flex-col gap-2 p-4 rounded-lg bg-muted/30 border border-border">
+                    <span className="min-w-min text-base font-medium">
+                      {i18n.word("'Overview & Rules'")}
+                    </span>
+                    <RichTextDisplay value={selected.description} className="min-w-min text-sm" />
                   </div>
-                  <div className="flex flex-row gap-6 p-4 rounded-lg bg-card border border-border">
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <span className="break-words text-sm text-muted-foreground">
-                        {'Starting Rating'}
+                  <div className="overflow-x-auto flex flex-row gap-6 p-4 rounded-lg bg-card border border-border">
+                    <div className="@container flex-1 flex flex-col gap-1 min-w-[10rem]">
+                      <span className="min-w-min text-sm text-muted-foreground">
+                        {i18n.word("'Starting Rating'")}
                       </span>
                       <MetricValue
-                        className="break-words text-[length:clamp(0.875rem,calc((100cqi_-_2rem)/var(--metric-length,12)_*_1.7),2.25rem)] leading-tight font-semibold tracking-tight tabular-nums"
+                        className="min-w-min text-[length:clamp(1.5rem,calc((100cqi_-_2rem)/var(--metric-length,12)_*_1.7),2.25rem)] leading-tight font-semibold tracking-tight tabular-nums"
                         value={selected.defaultRating}
                       />
                     </div>
                   </div>
                   <div className="flex flex-col gap-3">
-                    <span className="break-words text-base font-medium">
-                      {'Standings & Player Ratings'}
+                    <span className="min-w-min text-base font-medium">
+                      {i18n.word("'Standings & Player Ratings'")}
                     </span>
-                    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4">
-                      <div className="text-sm uppercase tracking-wide text-muted-foreground">
-                        {'Player Ratings'}
-                      </div>
+                    <div className="overflow-x-auto flex flex-col gap-2 rounded-lg border border-border bg-card p-4">
+                      <span className="min-w-min text-sm uppercase tracking-wide text-muted-foreground">
+                        {i18n.word("'Player Ratings'")}
+                      </span>
                       {((): JSX.Element => {
                         const chartRows = chartGroupMax(
                           selectedLeaderboard,
-                          (entry) => String(entry.playerNickname),
-                          (entry) => entry.rating
+                          (item) => String(item.playerNickname),
+                          (item) => item.rating
                         );
-                        if (chartRows.length === 0) {
+                        if (
+                          !chartRows.some((row) =>
+                            Object.values(row).some((value) => typeof value === 'number')
+                          )
+                        ) {
                           return (
                             <div
                               role="status"
                               className="flex min-h-32 items-center justify-center p-6 text-sm text-muted-foreground"
                             >
-                              {'No data yet'}
+                              {i18n.chrome.noDataYet}
                             </div>
                           );
                         }
@@ -213,12 +263,15 @@ export function GameLeaderboardsSpotlight(_props: {
                           <>
                             <ChartContainer
                               config={{
-                                value: { label: 'Current Rating', color: 'var(--chart-1)' },
+                                value: {
+                                  label: i18n.word("'Player Ratings'"),
+                                  color: 'var(--series-1)',
+                                },
                               }}
-                              className="aspect-auto h-[280px] w-full bg-card"
+                              className="aspect-auto h-[280px] min-h-[280px] w-full bg-card"
                             >
                               {((): JSX.Element => {
-                                const chartData = chartRows;
+                                const chartData = chartCategories(chartRows, [], {}, {});
                                 return (
                                   <BarChart
                                     data={chartData}
@@ -244,11 +297,12 @@ export function GameLeaderboardsSpotlight(_props: {
                                       tickFormatter={chartValueLabel}
                                     />
                                     <ChartTooltip
-                                      cursor={{
-                                        fill: 'color-mix(in oklch, var(--accent), transparent 85%)',
-                                      }}
+                                      cursor={false}
                                       content={
-                                        <ChartTooltipContent formatValue={chartValueLabel} />
+                                        <ChartTooltipContent
+                                          colorKey="color"
+                                          formatValue={chartValueLabel}
+                                        />
                                       }
                                     />
                                     <Bar
@@ -256,6 +310,9 @@ export function GameLeaderboardsSpotlight(_props: {
                                       fill="var(--color-value)"
                                       radius={[6, 6, 0, 0]}
                                     >
+                                      {chartData.map((entry, i) => (
+                                        <Cell key={i} fill={entry.color} />
+                                      ))}
                                       <LabelList
                                         dataKey="value"
                                         position="top"
