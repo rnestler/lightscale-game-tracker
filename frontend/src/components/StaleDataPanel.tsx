@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Archive, EyeOff, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
@@ -24,7 +25,7 @@ function RemovalDialog({
       open={pending !== null}
       title={pending?.label ?? ''}
       description={pending?.description ?? ''}
-      cancelLabel={'Cancel'}
+      cancelLabel={i18n.chrome.cancel}
       deleteLabel={pending?.label ?? ''}
       onCancel={onClose}
       onConfirm={() => {
@@ -105,7 +106,7 @@ function StaleField({ field, onClear }: { field: FieldData; onClear: () => void 
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground">{field.label}</span>
           <span className="rounded-full ui-chip-warning px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-            {'stale'}
+            {i18n.chrome.staleSuffix}
           </span>
         </div>
         <p className="mt-1 break-words font-mono text-xs text-muted-foreground">
@@ -118,7 +119,7 @@ function StaleField({ field, onClear }: { field: FieldData; onClear: () => void 
         className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground ui-control-ghost ui-control-danger-soft transition-colors"
       >
         <Trash2 className="h-3.5 w-3.5" />
-        {'Clear'}
+        {i18n.chrome.staleClear}
       </button>
     </div>
   );
@@ -201,8 +202,8 @@ export function StaleDataPanel({
 
   const clear = (column: string): void => {
     setPending({
-      label: 'Clear',
-      description: 'Permanently clear this backed-up data? This cannot be undone.',
+      label: i18n.chrome.staleClear,
+      description: i18n.chrome.staleClearConfirm,
       run: () => {
         fireAndForget(
           clearStale(table, column).then((ok) => {
@@ -220,8 +221,8 @@ export function StaleDataPanel({
       return;
     }
     setPending({
-      label: 'Delete stale data',
-      description: 'Permanently delete all backed-up data for this record? This cannot be undone.',
+      label: i18n.chrome.staleDeleteRecord,
+      description: i18n.chrome.staleDeleteRecordConfirm,
       run: () => {
         fireAndForget(
           deleteStaleRecord(table, recordId).then((ok) => {
@@ -246,7 +247,7 @@ export function StaleDataPanel({
         className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground ui-control-ghost transition-colors"
       >
         <Archive className="h-3.5 w-3.5 ui-warning-text" />
-        <span>{'Stale & hidden data'}</span>
+        <span>{i18n.chrome.staleToggle}</span>
         <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
           {total}
         </span>
@@ -259,11 +260,11 @@ export function StaleDataPanel({
               <div className="flex items-center gap-2">
                 <EyeOff className="h-4 w-4 text-muted-foreground" />
                 <h3 className="ui-display text-sm font-semibold tracking-tight text-foreground">
-                  {'Hidden fields'}
+                  {i18n.chrome.staleHiddenTitle}
                 </h3>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {'Stored data not shown on this record. Only visible to admins.'}
+                {i18n.chrome.staleHiddenDescription}
               </p>
               <div className="mt-4 flex flex-col gap-2.5">
                 {hidden.map((field) => (
@@ -279,13 +280,11 @@ export function StaleDataPanel({
                   <div className="flex items-center gap-2">
                     <Archive className="h-4 w-4 ui-warning-text" />
                     <h3 className="ui-display text-sm font-semibold tracking-tight text-foreground">
-                      {'Stale data'}
+                      {i18n.chrome.staleDataTitle}
                     </h3>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {
-                      'Backed-up values from fields that were removed or changed. Only visible to admins.'
-                    }
+                    {i18n.chrome.staleDataDescription}
                   </p>
                 </div>
                 {recordId !== null && (
@@ -295,7 +294,7 @@ export function StaleDataPanel({
                     className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground ui-control-ghost ui-control-danger-soft transition-colors"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    {'Delete stale data'}
+                    {i18n.chrome.staleDeleteRecord}
                   </button>
                 )}
               </div>
@@ -380,8 +379,8 @@ export function StaleDataView(): JSX.Element | null {
 
   const clearColumn = (table: string, column: string): void => {
     setPending({
-      label: 'Clear',
-      description: 'Permanently clear this backed-up data? This cannot be undone.',
+      label: i18n.chrome.staleClear,
+      description: i18n.chrome.staleClearConfirm,
       run: () => {
         fireAndForget(
           clearStale(table, column).then((ok) => {
@@ -399,9 +398,8 @@ export function StaleDataView(): JSX.Element | null {
 
   const clearTable = (table: string): void => {
     setPending({
-      label: 'Clear all',
-      description:
-        'Permanently delete all leftover data in this deleted resource? This cannot be undone.',
+      label: i18n.chrome.staleClearAll,
+      description: i18n.chrome.staleClearAllConfirm,
       run: () => {
         fireAndForget(
           clearStale(table, null).then((ok) => {
@@ -417,8 +415,8 @@ export function StaleDataView(): JSX.Element | null {
 
   const deleteRow = (table: string, id: string): void => {
     setPending({
-      label: 'Clear',
-      description: 'Permanently delete this record? This cannot be undone.',
+      label: i18n.chrome.staleClear,
+      description: i18n.chrome.staleRowDeleteConfirm,
       run: () => {
         fireAndForget(
           deleteStaleRecord(table, id).then((ok) => {
@@ -440,19 +438,17 @@ export function StaleDataView(): JSX.Element | null {
           setPending(null);
         }}
       />
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto w-full min-w-0 max-w-3xl">
         <div className="flex items-center gap-2.5">
           <Archive className="h-5 w-5 ui-warning-text" />
           <h1 className="ui-display text-2xl font-semibold tracking-tight" data-ls="3caea0a2d5">
-            {'Stale data'}
+            {i18n.chrome.staleDataTitle}
           </h1>
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {'Leftover data from removed fields and deleted resources. Only visible to admins.'}
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{i18n.chrome.staleManageDescription}</p>
         {tables.length === 0 ? (
           <p className="mt-10 rounded-xl border border-dashed border-border bg-card px-6 py-12 text-center text-sm text-muted-foreground">
-            {'No stale data.'}
+            {i18n.chrome.staleEmpty}
           </p>
         ) : (
           <div className="mt-6 flex flex-col gap-4">
@@ -469,12 +465,12 @@ export function StaleDataView(): JSX.Element | null {
                       </h2>
                       {entry.orphan && (
                         <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive-text">
-                          {'deleted'}
+                          {i18n.chrome.staleDeletedBadge}
                         </span>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {entry.rowCount} {'records'}
+                      {entry.rowCount} {i18n.chrome.staleRecords}
                     </p>
                   </div>
                   <div className="flex flex-shrink-0 items-center gap-2">
@@ -491,7 +487,7 @@ export function StaleDataView(): JSX.Element | null {
                         ) : (
                           <ChevronRight className="h-3.5 w-3.5" />
                         )}
-                        {'Inspect'}
+                        {i18n.chrome.staleInspect}
                       </button>
                     )}
                     {entry.orphan && (
@@ -503,7 +499,7 @@ export function StaleDataView(): JSX.Element | null {
                         className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground ui-control-ghost ui-control-danger-soft transition-colors"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                        {'Clear all'}
+                        {i18n.chrome.staleClearAll}
                       </button>
                     )}
                   </div>
@@ -511,7 +507,7 @@ export function StaleDataView(): JSX.Element | null {
                 {entry.columns.length > 0 && (
                   <div className="mt-4">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {'Removed fields'}
+                      {i18n.chrome.staleFieldsLabel}
                     </p>
                     <div className="mt-2 flex flex-col gap-2">
                       {entry.columns.map((column) => (
@@ -519,7 +515,9 @@ export function StaleDataView(): JSX.Element | null {
                           key={column.column}
                           className="flex items-center justify-between gap-4 rounded-xl border border-border/60 bg-background px-4 py-2.5"
                         >
-                          <span className="text-sm text-foreground">{column.label}</span>
+                          <span className="min-w-0 truncate text-sm text-foreground">
+                            {column.label}
+                          </span>
                           <button
                             type="button"
                             onClick={() => {
@@ -528,7 +526,7 @@ export function StaleDataView(): JSX.Element | null {
                             className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground ui-control-ghost ui-control-danger-soft transition-colors"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            {'Clear'}
+                            {i18n.chrome.staleClear}
                           </button>
                         </div>
                       ))}
@@ -538,7 +536,7 @@ export function StaleDataView(): JSX.Element | null {
                 {expanded === entry.table && (
                   <div className="mt-4 border-t border-border/60 pt-4">
                     {detail.rows.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">{'No records.'}</p>
+                      <p className="text-xs text-muted-foreground">{i18n.chrome.staleNoRows}</p>
                     ) : (
                       <div className="flex max-h-[28rem] flex-col gap-2 overflow-y-auto pr-1">
                         {detail.rows.map((row) => (
@@ -547,7 +545,7 @@ export function StaleDataView(): JSX.Element | null {
                             className="rounded-xl border border-border/60 bg-background px-4 py-3"
                           >
                             <div className="flex items-start justify-between gap-4">
-                              <span className="font-mono text-[11px] text-muted-foreground">
+                              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
                                 {row.id}
                               </span>
                               <button
@@ -558,7 +556,7 @@ export function StaleDataView(): JSX.Element | null {
                                 className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground ui-control-ghost ui-control-danger-soft transition-colors"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
-                                {'Clear'}
+                                {i18n.chrome.staleClear}
                               </button>
                             </div>
                             <dl className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">

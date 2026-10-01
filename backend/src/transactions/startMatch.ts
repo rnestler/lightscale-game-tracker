@@ -1,11 +1,12 @@
 import type { TransactionContext } from '../transaction-context.js';
 import { PreconditionError } from '../utils/precondition.js';
+import { updateRecord } from '../constraints.js';
 
 export async function performStartMatch(
   context: TransactionContext,
   requestBody: { match: string }
 ): Promise<void> {
-  const { client } = context;
+  const { client, callerId } = context;
   const matchRow = await client.query('SELECT * FROM "Match" WHERE id = $1', [requestBody.match]);
   if (matchRow.rows.length === 0) {
     throw new PreconditionError({ kind: 'precondition' });
@@ -29,8 +30,11 @@ export async function performStartMatch(
     gameDisplayName: string;
   };
   if (match.status !== 'scheduled') {
-    throw new PreconditionError({ kind: 'stated', message: 'Match must be scheduled to start' });
+    throw new PreconditionError({
+      kind: 'stated',
+      message: { en: 'Match must be scheduled to start' },
+    });
   }
   Object.assign(match, { status: 'inProgress' });
-  await client.query('UPDATE "Match" SET "status" = $1 WHERE id = $2', [match.status, match.id]);
+  await updateRecord(client, callerId, 'Match', match.id, { status: match.status });
 }

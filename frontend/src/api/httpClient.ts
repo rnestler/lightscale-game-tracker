@@ -1,5 +1,5 @@
+import { i18n } from '../i18n/text';
 import { apiBaseUrl } from '../config/apiConfig';
-import { viewerHeaders } from '../config/currency';
 import { apiRequestError, type RequestKind } from '../utils/errorHandling';
 import { beginProbe, endProbe } from '../utils/activityStore';
 import { reportReachable, reportRequestFailure } from '../utils/connectivity';
@@ -14,6 +14,7 @@ interface HttpRequestOptions {
 }
 
 const requestTimeoutMs = 30000;
+const recordsPerRequest = 200;
 
 async function sendRequest<ResponseBody>(
   path: string,
@@ -25,7 +26,7 @@ async function sendRequest<ResponseBody>(
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...viewerHeaders(),
+      'X-Language': i18n.language,
       ...(method === 'GET' ? {} : await submissionHeaders()),
     },
     credentials: 'include',
@@ -47,7 +48,7 @@ async function sendRequest<ResponseBody>(
       response = await fetch(url, { ...requestInit, signal: controller.signal });
     } catch {
       reportRequestFailure();
-      throw new Error('The server is not responding. Please try again.');
+      throw new Error(i18n.chrome.serverUnreachable);
     } finally {
       clearTimeout(timeoutId);
     }
@@ -69,6 +70,14 @@ async function sendRequest<ResponseBody>(
 export const httpClient = {
   get<ResponseBody>(path: string): Promise<ResponseBody> {
     return sendRequest<ResponseBody>(path, { method: 'GET', kind: 'load' });
+  },
+  async records<Row>(path: string, ids: string[]): Promise<Row[]> {
+    const rows: Row[] = [];
+    for (let start = 0; start < ids.length; start += recordsPerRequest) {
+      const body = { ids: ids.slice(start, start + recordsPerRequest) };
+      rows.push(...(await sendRequest<Row[]>(path, { method: 'POST', body, kind: 'load' })));
+    }
+    return rows;
   },
   query<ResponseBody>(path: string, body: unknown): Promise<ResponseBody> {
     return sendRequest<ResponseBody>(path, { method: 'POST', body, kind: 'load' });

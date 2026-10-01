@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { CSSProperties, JSX } from 'react';
 import { useState } from 'react';
 import { apiBaseUrl } from '../config/apiConfig.js';
@@ -37,10 +38,10 @@ export function GuestPrivacyInquiry({
       if (response.ok) {
         setSubmitted(true);
       } else {
-        setError('Could not submit your request. Please try again.');
+        setError(i18n.chrome.guestPrivacyError);
       }
     } catch {
-      setError('Could not submit your request. Please try again.');
+      setError(i18n.chrome.guestPrivacyError);
     } finally {
       setIsLoading(false);
     }
@@ -57,7 +58,7 @@ export function GuestPrivacyInquiry({
 
   return (
     <div className="min-h-screen bg-background text-foreground" style={backgroundStyle}>
-      <header className="fixed inset-x-0 top-0 z-50 h-14 flex items-center gap-2.5 px-4 sm:px-6 lg:px-8 xl:px-10 bg-background/80 backdrop-blur-sm border-b border-border">
+      <header className="ui-viewport-bar fixed inset-x-0 top-0 z-50 h-14 flex items-center gap-2.5 px-4 sm:px-6 lg:px-8 xl:px-10 bg-background/80 backdrop-blur-sm border-b border-border">
         <a
           href="/"
           className="flex-1 min-w-0 flex items-center gap-2.5 hover:opacity-80 transition-opacity"
@@ -74,7 +75,7 @@ export function GuestPrivacyInquiry({
           className="shrink-0 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <span>←</span>
-          <span className="hidden sm:inline">Back to site</span>
+          <span className="hidden sm:inline">{i18n.chrome.backToFrontPage}</span>
         </a>
       </header>
 
@@ -101,11 +102,10 @@ export function GuestPrivacyInquiry({
                 <ShieldCheck className="h-5 w-5 text-foreground" />
               </div>
               <h1 className="text-3xl md:text-4xl font-light tracking-tight leading-tight text-foreground">
-                Data protection request
+                {i18n.chrome.guestPrivacyTitle}
               </h1>
               <p className="text-sm md:text-base text-muted-foreground leading-normal">
-                Request access to, correction of, or erasure of your personal data. We will email
-                you to confirm before processing.
+                {i18n.chrome.guestPrivacyIntro}
               </p>
             </div>
 
@@ -113,7 +113,7 @@ export function GuestPrivacyInquiry({
               <div className="mt-8 rounded-lg border border-border bg-secondary p-4 flex items-start gap-3 opacity-0 animate-fade-in">
                 <MailCheck className="h-5 w-5 text-foreground shrink-0 mt-0.5" />
                 <p className="text-sm text-foreground leading-normal">
-                  Please check your email to confirm your request.
+                  {i18n.chrome.guestPrivacySubmitted}
                 </p>
               </div>
             ) : (
@@ -126,7 +126,7 @@ export function GuestPrivacyInquiry({
               >
                 <div className="flex flex-col gap-2">
                   <label htmlFor="privacy-kind" className="text-sm font-medium text-foreground">
-                    Type
+                    {i18n.chrome.dataProtectionKindLabel}
                   </label>
                   <select
                     id="privacy-kind"
@@ -135,16 +135,18 @@ export function GuestPrivacyInquiry({
                       setKind(event.target.value as InquiryKind);
                     }}
                     disabled={isLoading}
-                    className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <option value="access">Access</option>
-                    <option value="rectification">Rectification</option>
-                    <option value="erasure">Erasure</option>
+                    <option value="access">{i18n.chrome.dataProtectionKindAccess}</option>
+                    <option value="rectification">
+                      {i18n.chrome.dataProtectionKindRectification}
+                    </option>
+                    <option value="erasure">{i18n.chrome.dataProtectionKindErasure}</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="privacy-email" className="text-sm font-medium text-foreground">
-                    Your email
+                    {i18n.chrome.guestPrivacyEmailLabel}
                   </label>
                   <Input
                     id="privacy-email"
@@ -170,7 +172,7 @@ export function GuestPrivacyInquiry({
                   size="lg"
                   className="bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-primary"
                 >
-                  Submit request
+                  {i18n.chrome.guestPrivacySubmit}
                 </Button>
               </form>
             )}

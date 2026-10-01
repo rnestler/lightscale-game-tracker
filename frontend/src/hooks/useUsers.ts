@@ -1,4 +1,5 @@
 // Generated with Lightscale AI. This file belongs to the owner of the generated application. See LICENSE.
+import { i18n } from '../i18n/text';
 import { useEffect, useState } from 'react';
 import { apiBaseUrl } from '../config/apiConfig.js';
 
@@ -47,9 +48,9 @@ export function useUsers(): { userLabel: (id: string | undefined) => string } {
     }
     const user = users.find((entry) => entry.id === id);
     if (!user) {
-      return 'Unknown user';
+      return i18n.chrome.unknownUser;
     }
-    return user.name || user.email || 'Unknown user';
+    return user.name || user.email || i18n.chrome.unknownUser;
   }
 
   return { userLabel };

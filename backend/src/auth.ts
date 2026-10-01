@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { betterAuth } from 'better-auth';
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth';
 import { toNodeHandler } from 'better-auth/node';
@@ -9,6 +10,7 @@ import { createAccessControl } from 'better-auth/plugins/access';
 import { pool } from './db.js';
 import nodemailer from 'nodemailer';
 import { renderEmailHtml } from './email-format.js';
+import { isEmailAddress } from './validation.js';
 import { backendAddress, publicAddress } from './public-address.js';
 
 const APP_NAME = 'GameRank Tracker';
@@ -144,6 +146,9 @@ export interface NotificationEmail {
 }
 
 async function sendEmail(message: OutgoingEmail): Promise<void> {
+  if (!isEmailAddress(message.to)) {
+    throw new Error('Email recipient is not a single valid address');
+  }
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
@@ -151,10 +156,15 @@ async function sendEmail(message: OutgoingEmail): Promise<void> {
     throw new Error('Email delivery is not configured');
   }
   const port = Number(process.env.SMTP_PORT ?? '587');
+  const plaintext = process.env.SMTP_ALLOW_PLAINTEXT ?? '';
+  if (plaintext !== '' && plaintext !== 'true' && plaintext !== 'false') {
+    throw new Error('SMTP_ALLOW_PLAINTEXT must be empty, true, or false');
+  }
   const transport = nodemailer.createTransport({
     host,
     port,
     secure: port === 465,
+    requireTLS: plaintext !== 'true',
     auth: { user, pass },
   });
   await transport.sendMail({
@@ -239,13 +249,17 @@ async function findPendingInvitation(
   return result.rows.at(0) ?? null;
 }
 
+export function invitationTokenDigest(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
 async function findInvitationByToken(
   token: string,
   email: string
 ): Promise<{ id: string; roleId: string } | null> {
   const result = await pool.query<{ id: string; roleId: string }>(
     'SELECT id, "roleId" FROM "app_invitation" WHERE token = $1 AND LOWER(email) = LOWER($2) AND "expiresAt" > NOW() LIMIT 1',
-    [token, email]
+    [invitationTokenDigest(token), email]
   );
   return result.rows.at(0) ?? null;
 }
@@ -260,8 +274,13 @@ function invitationTokenFromContext(context: unknown): string | null {
   return typeof token === 'string' && token !== '' ? token : null;
 }
 
+interface SignUpCandidate {
+  email: string;
+  emailVerified: boolean;
+}
+
 function pendingInvitationForSignUp(
-  email: string,
+  user: SignUpCandidate,
   context: unknown
 ): Promise<{ id: string; roleId: string } | null> {
   if (isCredentialSignUp(context)) {
@@ -269,20 +288,21 @@ function pendingInvitationForSignUp(
     if (token === null) {
       return Promise.resolve(null);
     }
-    return findInvitationByToken(token, email);
+    return findInvitationByToken(token, user.email);
   }
-  return findPendingInvitation(email);
+  return user.emailVerified ? findPendingInvitation(user.email) : Promise.resolve(null);
 }
 
 async function consumeInvitation(userId: string, context: unknown): Promise<void> {
-  const userResult = await pool.query<{ email: string }>('SELECT email FROM "user" WHERE id = $1', [
-    userId,
-  ]);
-  const email = userResult.rows.at(0)?.email;
-  if (email === undefined) {
+  const userResult = await pool.query<SignUpCandidate>(
+    'SELECT email, "emailVerified" FROM "user" WHERE id = $1',
+    [userId]
+  );
+  const user = userResult.rows.at(0);
+  if (user === undefined) {
     return;
   }
-  const invitation = await pendingInvitationForSignUp(email, context);
+  const invitation = await pendingInvitationForSignUp(user, context);
   if (invitation === null) {
     return;
   }
@@ -344,12 +364,6 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   };
 }
-if (process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET) {
-  socialProviders['apple'] = {
-    clientId: process.env.APPLE_CLIENT_ID,
-    clientSecret: process.env.APPLE_CLIENT_SECRET,
-  };
-}
 if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
   socialProviders['microsoft'] = {
     clientId: process.env.MICROSOFT_CLIENT_ID,
@@ -393,6 +407,7 @@ export function buildAuthOptions(requireEmailVerification: boolean): BetterAuthO
       enabled: true,
       requireEmailVerification,
       minPasswordLength: 10,
+      revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }): Promise<void> => {
         if (!(await userHasCredentialAccount(user.id))) {
           return;
@@ -416,14 +431,14 @@ export function buildAuthOptions(requireEmailVerification: boolean): BetterAuthO
       user: {
         create: {
           before: async (
-            user: { email: string },
+            user: SignUpCandidate,
             context: unknown
-          ): Promise<{ data: { email: string; emailVerified: boolean } } | undefined> => {
-            const invitation = await pendingInvitationForSignUp(user.email, context);
+          ): Promise<{ data: SignUpCandidate } | undefined> => {
+            const invitation = await pendingInvitationForSignUp(user, context);
             if (invitation !== null) {
               return { data: { ...user, emailVerified: true } };
             }
-            if (isCredentialSignUp(context) && (await findPendingInvitation(user.email)) !== null) {
+            if ((await findPendingInvitation(user.email)) !== null) {
               throw new APIError('UNPROCESSABLE_ENTITY', {
                 message: 'User already exists. Use another email.',
                 code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',

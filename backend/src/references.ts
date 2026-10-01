@@ -5,50 +5,6 @@ export interface ReferenceSpec {
   table: string;
 }
 
-export async function ensureReferences(
-  tableName: string,
-  body: Record<string, unknown>,
-  references: ReferenceSpec[]
-): Promise<string | null> {
-  for (const reference of references) {
-    const id = body[reference.field];
-    if (typeof id === 'string' && id.length > 0) {
-      const { rows } = await pool.query(`SELECT 1 FROM "${reference.table}" WHERE "id" = $1`, [id]);
-      if (rows.length === 0) {
-        return `Reference '${reference.field}' on '${tableName}' points to a non-existent '${reference.table}' record`;
-      }
-    }
-  }
-  return null;
-}
-
-export async function ensureListReferences(
-  tableName: string,
-  entries: Array<Record<string, unknown>>,
-  references: ReferenceSpec[]
-): Promise<string | null> {
-  for (const reference of references) {
-    const ids = [
-      ...new Set(
-        entries
-          .map((entry) => entry[reference.field])
-          .filter((id): id is string => typeof id === 'string' && id.length > 0)
-      ),
-    ];
-    if (ids.length > 0) {
-      const { rows } = await pool.query<{ id: string }>(
-        `SELECT id FROM "${reference.table}" WHERE id = ANY($1)`,
-        [ids]
-      );
-      const found = new Set(rows.map((row) => row.id));
-      if (ids.some((id) => !found.has(id))) {
-        return `Reference '${reference.field}' on '${tableName}' points to a non-existent '${reference.table}' record`;
-      }
-    }
-  }
-  return null;
-}
-
 export interface StoredListSpec {
   field: string;
   table: string;

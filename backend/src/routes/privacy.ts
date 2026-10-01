@@ -12,10 +12,12 @@ import {
   type NotificationEmail,
 } from '../auth.js';
 import { loadUserRoles, isAdmin } from '../authorization.js';
+import { isEmailAddress } from '../validation.js';
 import type { PersonalDataReport, SubjectSeed } from '../privacy.js';
 import {
   identitySeed,
   seedForUser,
+  verifiedAccountEmail,
   buildReportForSeed,
   buildAdminReport,
   buildSubjectIndex,
@@ -193,13 +195,12 @@ privacyRouter.post('/account/erasure-request', async (request, response) => {
     response.status(409).json({ error: 'An erasure request is already pending' });
     return;
   }
-  const account = await pool.query<Row>('SELECT email FROM "user" WHERE id = $1', [userId]);
   await pool.query(
     'INSERT INTO "app_privacy_inquiry" (id, "userId", email, kind, attributes, verified, "verifyToken", status, "requestedAt", resolution, "resolvedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
     [
       randomUUID(),
       userId,
-      typeof account.rows[0]?.['email'] === 'string' ? account.rows[0]['email'] : '',
+      await verifiedAccountEmail(pool, userId),
       'erasure',
       '{}',
       true,
@@ -413,7 +414,7 @@ privacyRouter.post('/privacy/inquiry', async (request, response) => {
     return;
   }
   const email = typeof body.email === 'string' ? body.email.trim() : '';
-  if (email === '' || !email.includes('@')) {
+  if (!isEmailAddress(email)) {
     response.status(400).json({ error: 'A valid email is required' });
     return;
   }

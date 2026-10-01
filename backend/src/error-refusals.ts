@@ -1,3 +1,5 @@
+import { UploadRefusedError } from './file-inspection.js';
+
 const UNIQUE_VIOLATION = '23505';
 const REFERENCE_VIOLATION = '23503';
 
@@ -117,5 +119,8 @@ function databaseRefusal(error: unknown): ErrorRefusal | null {
 }
 
 export function errorRefusal(error: unknown): ErrorRefusal | null {
+  if (error instanceof UploadRefusedError) {
+    return { status: error.status, body: { error: error.message, code: error.code } };
+  }
   return databaseRefusal(error);
 }

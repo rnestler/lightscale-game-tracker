@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import {
   createContext,
   createElement,
@@ -38,11 +39,12 @@ export interface AuthContextValue {
   ) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   verifyTwoFactor: (code: string) => Promise<AuthResult>;
+  verifyBackupCode: (code: string) => Promise<AuthResult>;
   enableTwoFactor: (password?: string) => Promise<AuthResult>;
   disableTwoFactor: (password?: string) => Promise<AuthResult>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<AuthResult>;
   resendVerificationEmail: (email: string) => Promise<void>;
-  deleteAccount: () => Promise<void>;
+  deleteAccount: () => Promise<'deleted' | 'sign-in-required'>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -143,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
         if (result.error.code === 'EMAIL_NOT_VERIFIED') {
           return { ...result, emailVerificationRequired: true };
         }
-        throw new AuthRequestError(result.error, 'Authentication failed');
+        throw new AuthRequestError(result.error, i18n.chrome.authenticationFailed);
       }
 
       const needsTwoFactorVerification =
@@ -175,21 +177,24 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       })) as AuthResult;
 
       if (result.error) {
-        throw new AuthRequestError(result.error, 'Registration failed');
+        throw new AuthRequestError(result.error, i18n.chrome.registrationFailed);
       }
 
+      if (!result.data?.token && result.data?.user?.emailVerified === true) {
+        return signIn(email, password);
+      }
       const emailVerificationRequired = !result.data?.token;
       await refreshSession();
       return { ...result, emailVerificationRequired };
     },
-    [refreshSession]
+    [refreshSession, signIn]
   );
 
   const resendVerificationEmail = useCallback(async (email: string): Promise<void> => {
     const result = (await authClient.sendVerificationEmail({ email })) as AuthResult;
 
     if (result.error) {
-      throw new AuthRequestError(result.error, 'Could not resend the email. Try again.');
+      throw new AuthRequestError(result.error, i18n.chrome.verificationResendFailed);
     }
   }, []);
 
@@ -204,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
     } catch (error) {
       console.error('Failed to clear session cookie', error);
     }
+    sessionStorage.removeItem('lightscale.activeView');
     setSession(null);
   }, []);
 
@@ -222,7 +228,21 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       const result = (await verifyMethod({ code })) as AuthResult;
 
       if (result.error) {
-        throw new AuthRequestError(result.error, 'Invalid verification code');
+        throw new AuthRequestError(result.error, i18n.chrome.invalidVerificationCode);
+      }
+
+      await refreshSession();
+      return result;
+    },
+    [refreshSession]
+  );
+
+  const verifyBackupCode = useCallback(
+    async (code: string): Promise<AuthResult> => {
+      const result = (await authClient.twoFactor.verifyBackupCode({ code })) as AuthResult;
+
+      if (result.error) {
+        throw new AuthRequestError(result.error, i18n.chrome.invalidVerificationCode);
       }
 
       await refreshSession();
@@ -237,7 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
     })) as AuthResult;
 
     if (result.error) {
-      throw new AuthRequestError(result.error, 'Failed to enable two-factor authentication');
+      throw new AuthRequestError(result.error, i18n.chrome.twoFaEnableFailed);
     }
 
     return result;
@@ -250,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       })) as AuthResult;
 
       if (result.error) {
-        throw new AuthRequestError(result.error, 'Failed to disable two-factor authentication');
+        throw new AuthRequestError(result.error, i18n.chrome.twoFaDisableFailed);
       }
 
       await refreshSession();
@@ -268,10 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       })) as AuthResult;
 
       if (result.error) {
-        throw new AuthRequestError(
-          result.error,
-          'Could not change your password. Please try again.'
-        );
+        throw new AuthRequestError(result.error, i18n.chrome.passwordChangeFailed);
       }
 
       await refreshSession();
@@ -280,15 +297,24 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
     [refreshSession]
   );
 
-  const deleteAccount = useCallback(async (): Promise<void> => {
+  const deleteAccount = useCallback(async (): Promise<'deleted' | 'sign-in-required'> => {
     const response = await fetch(`${apiBaseUrl}/api/account`, {
       method: 'DELETE',
       credentials: 'include',
     });
-    if (!response.ok) {
-      throw new Error(await apiErrorMessage(response, 'Your account could not be deleted.'));
+    if (response.ok) {
+      await signOut();
+      return 'deleted';
     }
-    await signOut();
+    const { code } = (await response
+      .clone()
+      .json()
+      .catch(() => ({}))) as { code?: string };
+    if (code === 'RECENT_SIGN_IN_REQUIRED') {
+      await signOut();
+      return 'sign-in-required';
+    }
+    throw new Error(await apiErrorMessage(response, i18n.chrome.errorDeleteAccountFailed));
   }, [signOut]);
 
   return createElement(
@@ -304,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
         signUp,
         signOut,
         verifyTwoFactor,
+        verifyBackupCode,
         enableTwoFactor,
         disableTwoFactor,
         changePassword,

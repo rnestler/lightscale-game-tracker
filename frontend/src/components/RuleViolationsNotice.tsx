@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX, ReactNode } from 'react';
 import { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
@@ -63,14 +64,14 @@ export function RuleViolationsBanner({
               onFilter(!filtering);
             }}
           >
-            {filtering ? 'Show all' : 'Show only these'}
+            {filtering ? i18n.chrome.ruleViolationsShowAll : i18n.chrome.ruleViolationsShowOnly}
           </button>
         )}
       </div>
       <button
         type="button"
-        aria-label={'Dismiss'}
-        title={'Dismiss'}
+        aria-label={i18n.chrome.ruleViolationsDismiss}
+        title={i18n.chrome.ruleViolationsDismiss}
         className="shrink-0 ui-warning-text hover:opacity-70"
         onClick={() => {
           rememberDismissal(collection, signature);
@@ -96,7 +97,7 @@ export function RuleViolationMarker({
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          aria-label={'Breaks a rule'}
+          aria-label={i18n.chrome.ruleViolationsBreaksRule}
           className="inline-block h-2 w-2 rounded-full ui-warning-fill"
         />
       </TooltipTrigger>

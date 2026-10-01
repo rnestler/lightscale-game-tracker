@@ -28,7 +28,7 @@ export const matchesApi = {
     return httpClient.get<string[]>('/matches');
   },
   multiGet(ids: string[]): Promise<$Domain.Match[]> {
-    return httpClient.query<$Domain.Match[]>('/matches/multi-get', { ids });
+    return httpClient.records<$Domain.Match>('/matches/multi-get', ids);
   },
   query(request: QueryRequest): Promise<QueryPage> {
     return httpClient.query<QueryPage>('/matches/query', request);

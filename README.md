@@ -9,7 +9,7 @@ npm run migrate
 npm run setup:auth
 ```
 
-`npm run setup:all` runs the same four steps. `setup:db` creates the database and its user, `migrate` creates the tables as that user, and `setup:auth` creates the administrator account and prints its password once. `SELF-HOSTING.md` explains each step and every `.env` value.
+Run every command from the package root: `npm install` there installs the backend, the frontend, and the development tools such as `concurrently` that `npm run dev` needs. An `npm install` inside `backend` or `frontend` installs only that half and leaves the tools out. `npm run setup:all` runs the same four steps. `setup:db` writes `.env` from `.env.example` with secrets generated on this machine and creates the database and its user, `migrate` creates the tables as that user, and `setup:auth` creates the administrator account and prints its password once. `SELF-HOSTING.md` explains each step and every `.env` value.
 
 ## Development
 
@@ -29,6 +29,8 @@ npm start
 One Node process on `PORT` serves the frontend and the API. `SELF-HOSTING.md` describes the reverse proxy and the production `.env` values.
 
 ## Updates
+
+Stop the software and back up the database as `SELF-HOSTING.md` describes under Applying an update, then:
 
 ```bash
 npm install

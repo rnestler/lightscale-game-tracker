@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { apiBaseUrl } from '../config/apiConfig.js';
@@ -86,18 +87,23 @@ function formatFieldValue(value: unknown): string {
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value);
   }
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .map(([field, entry]) => `${field}: ${formatFieldValue(entry)}`)
+      .join(', ');
+  }
   return JSON.stringify(value);
 }
 
 function kindLabel(kind: string): string {
   if (kind === 'access') {
-    return 'Access';
+    return i18n.chrome.dataProtectionKindAccess;
   }
   if (kind === 'rectification') {
-    return 'Rectification';
+    return i18n.chrome.dataProtectionKindRectification;
   }
   if (kind === 'erasure') {
-    return 'Erasure';
+    return i18n.chrome.dataProtectionKindErasure;
   }
   return kind;
 }
@@ -173,7 +179,7 @@ export function DataProtectionDashboard(): JSX.Element {
       const data = (await response.json()) as { report: PersonalDataReport };
       setReport(data.report);
     } else {
-      setLookupMessage('No matching user.');
+      setLookupMessage(i18n.chrome.dataProtectionNoUser);
     }
   };
 
@@ -237,10 +243,14 @@ export function DataProtectionDashboard(): JSX.Element {
       body: JSON.stringify({ resolution, granted: buildGranted(id) }),
     });
     if (response.ok) {
-      setNotice(resolution === 'report' ? 'Report sent to the requester.' : 'Request resolved.');
+      setNotice(
+        resolution === 'report'
+          ? i18n.chrome.dataProtectionReportSent
+          : i18n.chrome.dataProtectionResolved
+      );
       await fetchInquiries();
     } else {
-      setActionError('Could not resolve the request.');
+      setActionError(i18n.chrome.dataProtectionResolveFailed);
     }
   };
 
@@ -254,17 +264,15 @@ export function DataProtectionDashboard(): JSX.Element {
         </div>
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold text-foreground" data-ls="f5aa6dd444">
-            Data Protection
+            {i18n.chrome.dataProtectionTab}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Inspect personal data and resolve erasure requests.
-          </p>
+          <p className="text-sm text-muted-foreground">{i18n.chrome.dataProtectionSubtitle}</p>
         </div>
       </div>
 
       <div className="rounded-lg border border-border bg-card p-4 flex items-center gap-3">
         <Globe className="h-5 w-5 text-muted-foreground shrink-0" />
-        <span className="text-sm text-foreground">Guest requests: open at /privacy</span>
+        <span className="text-sm text-foreground">{i18n.chrome.dataProtectionGuestEnabled}</span>
       </div>
 
       {notice !== null && (
@@ -279,10 +287,14 @@ export function DataProtectionDashboard(): JSX.Element {
       )}
 
       <section className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold text-foreground">Erasure requests</h2>
+        <h2 className="text-lg font-semibold text-foreground">
+          {i18n.chrome.dataProtectionErasureQueue}
+        </h2>
         <div className="rounded-lg border border-border bg-card overflow-hidden">
           {inquiries.length === 0 ? (
-            <div className="px-5 py-6 text-sm text-muted-foreground">No erasure requests.</div>
+            <div className="px-5 py-6 text-sm text-muted-foreground">
+              {i18n.chrome.dataProtectionNoRequests}
+            </div>
           ) : (
             <div className="divide-y divide-border">
               {inquiries.map((entry) => {
@@ -291,8 +303,10 @@ export function DataProtectionDashboard(): JSX.Element {
                 return (
                   <div key={entry.id} className="flex flex-col gap-3 px-5 py-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-sm font-medium text-foreground">{entry.email}</span>
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                          {entry.email}
+                        </span>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs font-medium text-foreground">
                             {kindLabel(entry.kind)}
@@ -307,7 +321,7 @@ export function DataProtectionDashboard(): JSX.Element {
                       </div>
                       {entry.status === 'pending' && !entry.verified && (
                         <span className="text-xs text-muted-foreground">
-                          Awaiting email verification
+                          {i18n.chrome.dataProtectionUnverified}
                         </span>
                       )}
                       {entry.status === 'pending' && entry.verified && (
@@ -320,7 +334,7 @@ export function DataProtectionDashboard(): JSX.Element {
                             className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
                           >
                             <FileText className="h-4 w-4" />
-                            Send report
+                            {i18n.chrome.dataProtectionSendReport}
                           </button>
                           <button
                             type="button"
@@ -330,7 +344,7 @@ export function DataProtectionDashboard(): JSX.Element {
                             className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
                           >
                             <PencilLine className="h-4 w-4" />
-                            Mark amended
+                            {i18n.chrome.dataProtectionMarkAmended}
                           </button>
                           <button
                             type="button"
@@ -340,7 +354,7 @@ export function DataProtectionDashboard(): JSX.Element {
                             className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
                           >
                             <ListChecks className="h-4 w-4" />
-                            Review matches
+                            {i18n.chrome.dataProtectionReviewMatches}
                           </button>
                           <button
                             type="button"
@@ -350,7 +364,7 @@ export function DataProtectionDashboard(): JSX.Element {
                             className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
                           >
                             <UserX className="h-4 w-4" />
-                            Anonymize
+                            {i18n.chrome.dataProtectionAnonymize}
                           </button>
                           <button
                             type="button"
@@ -360,7 +374,7 @@ export function DataProtectionDashboard(): JSX.Element {
                             className="inline-flex items-center gap-1.5 h-9 rounded-lg bg-destructive px-3 text-sm font-medium text-destructive-foreground hover:opacity-90"
                           >
                             <Trash2 className="h-4 w-4" />
-                            Delete
+                            {i18n.chrome.dataProtectionDelete}
                           </button>
                         </div>
                       )}
@@ -376,33 +390,33 @@ export function DataProtectionDashboard(): JSX.Element {
                         className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
                       >
                         <FileText className="h-3.5 w-3.5" />
-                        View report
+                        {i18n.chrome.dataProtectionViewReport}
                       </button>
                       <a
                         href={pdfUrl(`/api/admin/privacy-inquiries/${entry.id}/report`)}
                         className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
                       >
                         <Download className="h-3.5 w-3.5" />
-                        Download PDF
+                        {i18n.chrome.dataProtectionDownloadPdf}
                       </a>
                     </div>
                     {entry.id in candidates && (
                       <div className="rounded-lg border border-border bg-secondary p-3 flex flex-col gap-3">
                         <p className="text-xs text-muted-foreground">
-                          Select matches to include when you anonymize or delete.
+                          {i18n.chrome.dataProtectionMatchesHint}
                         </p>
                         {entryCandidates.length === 0 ? (
                           <p className="text-sm text-muted-foreground">
-                            No further matches to review.
+                            {i18n.chrome.dataProtectionNoMatches}
                           </p>
                         ) : (
                           <div className="flex flex-col gap-3">
                             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                              Possible matches
+                              {i18n.chrome.dataProtectionMatchHeading}
                             </span>
                             {entryCandidates.map((group) => (
                               <div key={group.resource} className="flex flex-col gap-1">
-                                <span className="text-xs font-medium text-foreground">
+                                <span className="min-w-0 truncate text-xs font-medium text-foreground">
                                   {group.resource}
                                 </span>
                                 {group.records.map((record) => {
@@ -420,7 +434,7 @@ export function DataProtectionDashboard(): JSX.Element {
                                         }}
                                         className="mt-1"
                                       />
-                                      <span className="break-words">
+                                      <span className="min-w-0 break-words">
                                         {Object.entries(record.fields)
                                           .map(
                                             ([field, value]) =>
@@ -446,7 +460,9 @@ export function DataProtectionDashboard(): JSX.Element {
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold text-foreground">Look up a data subject</h2>
+        <h2 className="text-lg font-semibold text-foreground">
+          {i18n.chrome.dataProtectionLookup}
+        </h2>
         <div className="relative w-80 max-w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -455,14 +471,16 @@ export function DataProtectionDashboard(): JSX.Element {
             onChange={(e) => {
               setQuery(e.target.value);
             }}
-            placeholder="Search by email or name"
+            placeholder={i18n.chrome.dataProtectionSearchPlaceholder}
             className="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
           />
         </div>
 
         <div className="rounded-lg border border-border bg-card overflow-hidden">
           {filteredSubjects.length === 0 ? (
-            <div className="px-5 py-6 text-sm text-muted-foreground">No matching user.</div>
+            <div className="px-5 py-6 text-sm text-muted-foreground">
+              {i18n.chrome.dataProtectionNoUser}
+            </div>
           ) : (
             <div className="divide-y divide-border">
               {filteredSubjects.map((subject) => (
@@ -470,17 +488,17 @@ export function DataProtectionDashboard(): JSX.Element {
                   key={subjectReportUrl(subject)}
                   className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
                 >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium text-foreground">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="min-w-0 truncate text-sm font-medium text-foreground">
                       {subjectLabel(subject)}
                     </span>
                     {subjectDetail(subject) !== '' && (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="min-w-0 truncate text-xs text-muted-foreground">
                         {subjectDetail(subject)}
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -489,14 +507,14 @@ export function DataProtectionDashboard(): JSX.Element {
                       className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
                     >
                       <FileText className="h-4 w-4" />
-                      View report
+                      {i18n.chrome.dataProtectionViewReport}
                     </button>
                     <a
                       href={pdfUrl(subjectReportUrl(subject))}
                       className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
                     >
                       <Download className="h-4 w-4" />
-                      Download PDF
+                      {i18n.chrome.dataProtectionDownloadPdf}
                     </a>
                   </div>
                 </div>
@@ -513,7 +531,7 @@ export function DataProtectionDashboard(): JSX.Element {
 
         {report !== null && !hasReport && (
           <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-            No personal data found for this user.
+            {i18n.chrome.personalDataEmpty}
           </div>
         )}
 
@@ -525,7 +543,7 @@ export function DataProtectionDashboard(): JSX.Element {
                 className="self-start inline-flex items-center gap-1.5 h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 <Download className="h-4 w-4" />
-                Download PDF
+                {i18n.chrome.dataProtectionDownloadPdf}
               </a>
             )}
             {report.resources.map((group) => (
@@ -534,8 +552,12 @@ export function DataProtectionDashboard(): JSX.Element {
                 className="rounded-lg border border-border bg-card overflow-hidden"
               >
                 <div className="flex items-center justify-between border-b border-border px-5 py-3">
-                  <h3 className="text-sm font-semibold text-foreground">{group.resource}</h3>
-                  <span className="text-xs text-muted-foreground">{group.records.length}</span>
+                  <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">
+                    {group.resource}
+                  </h3>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {group.records.length}
+                  </span>
                 </div>
                 <div className="divide-y divide-border">
                   {group.records.map((record) => (
@@ -562,14 +584,22 @@ export function DataProtectionDashboard(): JSX.Element {
       </section>
       <ConfirmDeleteDialog
         open={pendingErasure !== null}
-        title={pendingErasure?.resolution === 'anonymize' ? 'Anonymize' : 'Delete'}
+        title={
+          pendingErasure?.resolution === 'anonymize'
+            ? i18n.chrome.dataProtectionAnonymize
+            : i18n.chrome.dataProtectionDelete
+        }
         description={
           pendingErasure?.resolution === 'anonymize'
-            ? 'Anonymize this user’s personal data? Records are kept but personal fields are scrubbed.'
-            : 'Delete this user’s owned records and account? This cannot be undone.'
+            ? i18n.chrome.dataProtectionConfirmAnonymize
+            : i18n.chrome.dataProtectionConfirmDelete
         }
-        cancelLabel={'Cancel'}
-        deleteLabel={pendingErasure?.resolution === 'anonymize' ? 'Anonymize' : 'Delete'}
+        cancelLabel={i18n.chrome.cancel}
+        deleteLabel={
+          pendingErasure?.resolution === 'anonymize'
+            ? i18n.chrome.dataProtectionAnonymize
+            : i18n.chrome.dataProtectionDelete
+        }
         onCancel={() => {
           setPendingErasure(null);
         }}

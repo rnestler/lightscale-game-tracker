@@ -1,4 +1,5 @@
-import { Fragment, useState, useEffect, type JSX } from 'react';
+import { i18n } from '../i18n/text';
+import { Fragment, useState, useEffect, type JSX, type ComponentProps } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { useGames } from '../hooks/useGames';
 import { useMatches } from '../hooks/useMatches';
@@ -9,6 +10,7 @@ import { MatchDetailView } from './MatchDetailView';
 import { ConfirmDeleteDialog } from './ui/ConfirmDelete';
 import { MatchEditDialog } from './MatchEditDialog';
 import { runWithToast } from '../utils/errorHandling';
+import { ErrorMessage } from './ui/error-message';
 import type * as $Domain from '../types/domain';
 import {
   ChevronLeftIcon,
@@ -16,19 +18,27 @@ import {
   DicesIcon,
   PencilIcon,
   PlusIcon,
+  RotateCcwIcon,
   SearchIcon,
+  SearchXIcon,
   SlidersHorizontalIcon,
   SwordsIcon,
   Trash2Icon,
   UserIcon,
+  XIcon,
 } from 'lucide-react';
-import { getStoredHiddenColumns, setStoredHiddenColumns } from '../api/pagination';
+import {
+  getStoredHiddenColumns,
+  isLastShownColumn,
+  setStoredHiddenColumns,
+} from '../api/pagination';
 import { CalculatedMark } from './CalculatedMark';
 import { useRuleViolations } from '../hooks/useRuleViolations';
 import { RuleViolationMarker, RuleViolationsBanner } from './RuleViolationsNotice';
 import { RecordChip } from '../components/ui/record-chip';
 import { relativeTime } from '../utils/relativeTime';
 import { onNavigationTo } from '../utils/recordNavigation';
+import { isOwnClick } from '../utils/ownClick';
 import { useUsers } from '../hooks/useUsers';
 import { SelectCards } from './ui/card-select';
 import { Skeleton, SkeletonCardGrid } from './ui/skeleton';
@@ -46,12 +56,19 @@ function cycleSort(state: SortState, key: string): SortState {
 }
 
 export function MatchesList(_props: { onNavigate?: (view: string) => void }): JSX.Element {
-  const { games, isInitializing: gamesInitializing, reloadGames } = useGames();
+  const { permissions } = usePermissions();
+  const {
+    isInitializing: gamesInitializing,
+    reloadGames,
+    errorMessage: gamesError,
+    games: gamesComplete,
+  } = useGames();
   const {
     matches,
     isInitializing: matchesInitializing,
     reloadMatches,
     deleteMatch,
+    isBusy: matchesBusy,
     errorMessage: matchesError,
     total: matchesTotal,
     hasMore: matchesHasMore,
@@ -59,8 +76,12 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
     loadMore: loadMoreMatches,
     loadAll: loadAllMatches,
   } = useMatches({ paged: true, pageSize: 24 });
-  const { players, isInitializing: playersInitializing, reloadPlayers } = usePlayers();
-  const { permissions } = usePermissions();
+  const {
+    isInitializing: playersInitializing,
+    reloadPlayers,
+    errorMessage: playersError,
+    players: playersComplete,
+  } = usePlayers();
   const { userLabel } = useUsers();
   const matchesRuleViolations = useRuleViolations('matches');
   const [matchesRuleFilter, setMatchesRuleFilter] = useState(false);
@@ -88,16 +109,16 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
   }, [pendingNavId, matches]);
   const [matchesQuery, setMatchesQuery] = useState('');
   const matchesStatusLabels = new Map<string, string>([
-    ['scheduled', 'Scheduled'],
-    ['inProgress', 'In Progress'],
-    ['completed', 'Completed'],
-    ['disputed', 'Disputed'],
-    ['cancelled', 'Cancelled'],
+    ['scheduled', i18n.word('MatchStatus.scheduled')],
+    ['inProgress', i18n.word('MatchStatus.inProgress')],
+    ['completed', i18n.word('MatchStatus.completed')],
+    ['disputed', i18n.word('MatchStatus.disputed')],
+    ['cancelled', i18n.word('MatchStatus.cancelled')],
   ]);
   const matchesOutcomeLabels = new Map<string, string>([
-    ['playerOneWin', 'Player 1 Victory'],
-    ['playerTwoWin', 'Player 2 Victory'],
-    ['draw', 'Draw'],
+    ['playerOneWin', i18n.word('MatchOutcome.playerOneWin')],
+    ['playerTwoWin', i18n.word('MatchOutcome.playerTwoWin')],
+    ['draw', i18n.word('MatchOutcome.draw')],
   ]);
   const matchesSearchTerm = matchesQuery.trim().toLowerCase();
   const matchesMatches =
@@ -154,25 +175,43 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
   const matchesPageCount = Math.max(1, Math.ceil(sortedMatches.length / 24));
   const matchesPageSafe = Math.min(matchesPage, matchesPageCount - 1);
   const pagedMatches = sortedMatches.slice(matchesPageSafe * 24, matchesPageSafe * 24 + 24);
-  const matchesColumnLabels: readonly string[] = [
-    'Match Matchup',
-    'Game & Variant',
-    'Status',
-    'Date & Time',
-    'Game',
-    'Player 1',
-    'Player 2',
-    'Outcome',
-    'P1 Score',
-    'P2 Score',
-    'P1 Rating Change',
-    'P2 Rating Change',
-    'Recorder',
-    'Created At',
-    'Game Display Name',
+  const matchesColumnKeys: readonly string[] = [
+    'title',
+    'game.displayName',
+    'status',
+    'scheduledAt',
+    'game',
+    'playerOne',
+    'playerTwo',
+    'outcome',
+    'playerOneScore',
+    'playerTwoScore',
+    'playerOneRatingDelta',
+    'playerTwoRatingDelta',
+    'recordedBy',
+    'createdAt',
+    'gameDisplayName',
+  ];
+  const matchesReadableColumns: readonly boolean[] = [
+    canReadField(permissions, 'matches', 'title'),
+    canReadField(permissions, 'matches', 'gameId') &&
+      canReadField(permissions, 'games', 'displayName'),
+    canReadField(permissions, 'matches', 'status'),
+    canReadField(permissions, 'matches', 'scheduledAt'),
+    canReadField(permissions, 'matches', 'gameId'),
+    canReadField(permissions, 'matches', 'playerOneId'),
+    canReadField(permissions, 'matches', 'playerTwoId'),
+    canReadField(permissions, 'matches', 'outcome'),
+    canReadField(permissions, 'matches', 'playerOneScore'),
+    canReadField(permissions, 'matches', 'playerTwoScore'),
+    canReadField(permissions, 'matches', 'playerOneRatingDelta'),
+    canReadField(permissions, 'matches', 'playerTwoRatingDelta'),
+    canReadField(permissions, 'matches', 'recordedById'),
+    canReadField(permissions, 'matches', 'createdAt'),
+    canReadField(permissions, 'matches', 'gameDisplayName'),
   ];
   const [matchesHiddenColumns, setMatchesHiddenColumns] = useState<Set<number>>(() =>
-    getStoredHiddenColumns('matches', matchesColumnLabels, [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+    getStoredHiddenColumns('matches', matchesColumnKeys, [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
   );
   function filterMatchesRuleViolations(only: boolean): void {
     if (only !== matchesRuleFilter) {
@@ -193,7 +232,9 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
   }
   const [editingMatches, setEditingMatches] = useState<$Domain.Match | null>(null);
   const [editingSelected, setEditingSelected] = useState<$Domain.Match | null>(null);
-  const [creatingMatches, setCreatingMatches] = useState(false);
+  const [creatingMatches, setCreatingMatches] = useState<NonNullable<
+    ComponentProps<typeof MatchEditDialog>['defaults']
+  > | null>(null);
   const [deleteConfirmMatch, setDeleteConfirmMatch] = useState<{
     id: string;
     label: string;
@@ -202,7 +243,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
     return (
       <div
         role="status"
-        aria-label={'Loading…'}
+        aria-label={i18n.chrome.loading}
         className="rounded-xl border border-border bg-card p-4 space-y-3"
       >
         <Skeleton className="h-5 w-1/3" />
@@ -213,6 +254,8 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
   }
   return (
     <>
+      {gamesError !== null && <ErrorMessage message={gamesError} />}
+      {playersError !== null && <ErrorMessage message={playersError} />}
       <SelectCards
         selectedId={selected?.id ?? null}
         onSelect={setSelectedId}
@@ -221,11 +264,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
         <div className="flex flex-col gap-4 p-4 @md:p-8" data-ls="b46d0d1c43">
           {!(permissions?.['matches']?.read ?? false) ? (
             <div
-              className="flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
+              className="overflow-x-auto flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
               data-ls="0e8b4b1715"
             >
-              <span className="break-words text-muted-foreground" data-ls="caa82dbbfe">
-                {"You don't have permission to view this content."}
+              <span className="min-w-min text-muted-foreground" data-ls="caa82dbbfe">
+                {i18n.chrome.noPermission}
               </span>
             </div>
           ) : null}
@@ -235,30 +278,89 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                 className="flex flex-row items-center gap-3 min-w-0 flex-wrap [&>*]:max-w-full py-1"
                 data-ls="8f40c7c4be"
               >
-                {matchesMatches.length === 1 ? (
-                  <span
-                    className="break-words text-sm text-muted-foreground shrink-0"
-                    data-ls="cbea46458b"
-                  >{`${matchesMatches.length} match`}</span>
+                {!(matchesMatches.length < matchesTotal) ? (
+                  <Fragment>
+                    {matchesMatches.length === 1 ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="978525f1c3"
+                      >
+                        {i18n.fill(
+                          `{count} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('Match') })}`,
+                          { count: matchesMatches.length }
+                        )}
+                      </span>
+                    ) : null}
+                    {!(matchesMatches.length === 1) ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="83795e96a1"
+                      >
+                        {i18n.fill(
+                          `{count} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('Match', 1) })}`,
+                          { count: matchesMatches.length }
+                        )}
+                      </span>
+                    ) : null}
+                  </Fragment>
                 ) : null}
-                {!(matchesMatches.length === 1) ? (
-                  <span
-                    className="break-words text-sm text-muted-foreground shrink-0"
-                    data-ls="e9d3b3fac4"
-                  >{`${matchesMatches.length} matches`}</span>
+                {matchesMatches.length < matchesTotal ? (
+                  <Fragment>
+                    {matchesTotal === 1 ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="16b45c02f1"
+                      >
+                        {i18n.fill(
+                          `${i18n.chrome.countOfTotal} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('Match') })}`,
+                          { shown: matchesMatches.length, total: matchesTotal }
+                        )}
+                      </span>
+                    ) : null}
+                    {!(matchesTotal === 1) ? (
+                      <span
+                        className="min-w-min text-sm text-muted-foreground shrink-0"
+                        data-ls="4baccd0b43"
+                      >
+                        {i18n.fill(
+                          `${i18n.chrome.countOfTotal} ${i18n.fill(i18n.chrome.countNoun, { name: i18n.word('Match', 1) })}`,
+                          { shown: matchesMatches.length, total: matchesTotal }
+                        )}
+                      </span>
+                    ) : null}
+                  </Fragment>
                 ) : null}
-                <div className="flex-1" data-ls="83795e96a1" />
-                <div className="relative min-w-[12rem] flex-1" data-ls="8e4ba9899f">
+                <div className="flex-1" data-ls="5902821ecb" />
+                <div className="relative min-w-[12rem] flex-1" data-ls="9f897f0198">
                   <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input
                     value={matchesQuery}
                     onChange={(event) => {
                       setMatchesQuery(event.target.value);
                     }}
-                    placeholder="Search…"
-                    aria-label="Search matches by name"
-                    className="h-10 w-full rounded-md border border-border bg-transparent pl-9 pr-3 text-sm focus:border-primary focus:outline-none"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape' && matchesQuery !== '') {
+                        event.preventDefault();
+                        setMatchesQuery('');
+                      }
+                    }}
+                    placeholder={i18n.chrome.search}
+                    aria-label={i18n.fill(i18n.chrome.searchLabel, { name: i18n.word('matches') })}
+                    className={`h-10 w-full rounded-md border pl-9 pr-9 text-sm transition-colors focus:border-primary focus:outline-none ${matchesQuery === '' ? 'border-border bg-transparent' : 'border-primary bg-primary/5'}`}
                   />
+                  {matchesQuery !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMatchesQuery('');
+                      }}
+                      aria-label={i18n.chrome.clearSearch}
+                      title={i18n.chrome.clearSearch}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
                 {(permissions?.['matches']?.create ?? false) && (
                   <button
@@ -266,87 +368,99 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                     data-ls="fe87297586"
                     className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
                     onClick={() => {
-                      setCreatingMatches(true);
+                      setCreatingMatches({});
                     }}
                   >
                     <PlusIcon className="h-4 w-4" />
-                    {'Add match'}
+                    {i18n.fill(i18n.chrome.addItem, { name: i18n.word('Match') })}
                   </button>
                 )}
               </div>
               {matchesError !== null ? (
                 <div
-                  className="flex flex-col p-3 rounded-md border border-border bg-secondary"
-                  data-ls="16b45c02f1"
+                  className="flex flex-col overflow-x-auto p-3 rounded-md border border-border bg-secondary"
+                  data-ls="49a5f5b25a"
                 >
-                  <span className="break-words text-sm" data-ls="0d3e7a657a">
+                  <span className="min-w-min text-sm" data-ls="4eac1f6cac">
                     {matchesError}
                   </span>
                 </div>
               ) : null}
-              {matchesInitializing ? <SkeletonCardGrid data-ls="5902821ecb" /> : null}
+              {matchesInitializing ? <SkeletonCardGrid data-ls="8ce7cab615" /> : null}
               {matchesTotal === 0 && !matchesInitializing && !(matchesError !== null) ? (
                 <div
-                  className="flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
-                  data-ls="8f81820116"
+                  className="overflow-x-auto flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
+                  data-ls="f01a176e08"
                 >
                   <SwordsIcon
                     className="shrink-0 h-8 w-8 text-muted-foreground"
-                    data-ls="49a5f5b25a"
+                    data-ls="eed25f0952"
                   />
-                  <span className="break-words text-base font-medium" data-ls="4eac1f6cac">
-                    {'No matches yet'}
+                  <span className="min-w-min text-base font-medium" data-ls="02b72b533c">
+                    {i18n.fill(i18n.chrome.noEntriesTitle, { name: i18n.word('matches') })}
                   </span>
                   {(permissions?.['matches']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="8ce7cab615"
-                    >
-                      {'Get started by adding your first match.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="e886b65caf">
+                      {i18n.fill(i18n.chrome.noEntriesGetStarted, { name: i18n.word('Match') })}
                     </span>
                   ) : null}
                   {(permissions?.['matches']?.create ?? false) && (
                     <button
                       type="button"
-                      data-ls="0cc1b55bc0"
+                      data-ls="55f823a9cb"
                       className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
                       onClick={() => {
-                        setCreatingMatches(true);
+                        setCreatingMatches({});
                       }}
                     >
                       <PlusIcon className="h-4 w-4" />
-                      {'Add match'}
+                      {i18n.fill(i18n.chrome.addItem, { name: i18n.word('Match') })}
                     </button>
                   )}
                 </div>
               ) : null}
-              {matchesMatches.length === 0 && !(matchesTotal === 0) ? (
+              {matchesMatches.length === 0 && !(matchesTotal === 0) && matchesBusy ? (
+                <SkeletonCardGrid data-ls="d70f5f2a59" />
+              ) : null}
+              {matchesMatches.length === 0 && !(matchesTotal === 0) && !matchesBusy ? (
                 <div
-                  className="flex flex-col items-center p-12 rounded-xl border border-border bg-card shadow-sm"
-                  data-ls="eed25f0952"
+                  className="overflow-x-auto flex flex-col items-center gap-2 p-12 rounded-xl border border-border bg-card shadow-sm"
+                  data-ls="2279d975ac"
                 >
+                  <SearchXIcon
+                    className="shrink-0 h-8 w-8 text-muted-foreground"
+                    data-ls="e3a248f1d8"
+                  />
+                  <span className="min-w-min text-base font-medium" data-ls="f6514dfcbf">
+                    {i18n.chrome.noMatches}
+                  </span>
                   {(permissions?.['matches']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="882a45dfd3"
-                    >
-                      {'Try adjusting your search or add a new match.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="2d6fe44cc1">
+                      {i18n.fill(i18n.chrome.noEntriesSearchCreate, { name: i18n.word('Match') })}
                     </span>
                   ) : null}
                   {!(permissions?.['matches']?.create ?? false) ? (
-                    <span
-                      className="break-words text-sm text-muted-foreground"
-                      data-ls="55f823a9cb"
-                    >
-                      {'Try adjusting your search.'}
+                    <span className="min-w-min text-sm text-muted-foreground" data-ls="ddb3840c21">
+                      {i18n.chrome.noEntriesSearch}
                     </span>
                   ) : null}
+                  <button
+                    type="button"
+                    data-ls="15b39d6959"
+                    className="inline-flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                    onClick={() => {
+                      setMatchesQuery('');
+                    }}
+                  >
+                    <RotateCcwIcon className="h-4 w-4" />
+                    {i18n.chrome.showAll}
+                  </button>
                 </div>
               ) : null}
               {matchesMatches.length > 0 ? (
                 <div
                   className="ui-table-surface flex flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden"
-                  data-ls="d70f5f2a59"
+                  data-ls="3e620ab5a0"
                 >
                   <div className="flex flex-col gap-2">
                     <RuleViolationsBanner
@@ -375,23 +489,26 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                   }
                                   className="px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap"
                                 >
-                                  <button
-                                    type="button"
-                                    className="flex items-center gap-1 font-medium hover:text-foreground"
-                                    onClick={() => {
-                                      runWithToast(loadAllMatches());
-                                      setMatchesSort(cycleSort(matchesSort, 'title'));
-                                    }}
-                                  >
-                                    {'Match Matchup'}
-                                    <span aria-hidden="true">
-                                      {matchesSort?.key === 'title'
-                                        ? matchesSort.dir === 'asc'
-                                          ? ' \u25b2'
-                                          : ' \u25bc'
-                                        : ''}
-                                    </span>
-                                  </button>
+                                  <span className="inline-flex items-center">
+                                    <button
+                                      type="button"
+                                      className="flex items-center gap-1 font-medium hover:text-foreground"
+                                      onClick={() => {
+                                        runWithToast(loadAllMatches());
+                                        setMatchesSort(cycleSort(matchesSort, 'title'));
+                                      }}
+                                    >
+                                      {'Match Matchup'}
+                                      <span aria-hidden="true">
+                                        {matchesSort?.key === 'title'
+                                          ? matchesSort.dir === 'asc'
+                                            ? ' \u25b2'
+                                            : ' \u25bc'
+                                          : ''}
+                                      </span>
+                                    </button>
+                                    <CalculatedMark id="Match.title" />
+                                  </span>
                                 </th>
                               )}
                             {!matchesHiddenColumns.has(1) &&
@@ -401,7 +518,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                   scope="col"
                                   className="px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap"
                                 >
-                                  {'Game & Variant'}
+                                  {i18n.word("'Game & Variant'")}
                                 </th>
                               )}
                             {!matchesHiddenColumns.has(2) &&
@@ -474,7 +591,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                   scope="col"
                                   className="px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap"
                                 >
-                                  {'Game'}
+                                  {i18n.word('Match.game')}
                                 </th>
                               )}
                             {!matchesHiddenColumns.has(5) &&
@@ -483,7 +600,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                   scope="col"
                                   className="px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap"
                                 >
-                                  {'Player 1'}
+                                  {i18n.word('Match.playerOne')}
                                 </th>
                               )}
                             {!matchesHiddenColumns.has(6) &&
@@ -492,7 +609,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                   scope="col"
                                   className="px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap"
                                 >
-                                  {'Player 2'}
+                                  {i18n.word('Match.playerTwo')}
                                 </th>
                               )}
                             {!matchesHiddenColumns.has(7) &&
@@ -516,7 +633,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                       setMatchesSort(cycleSort(matchesSort, 'outcome'));
                                     }}
                                   >
-                                    {'Outcome'}
+                                    {i18n.word('Match.outcome')}
                                     <span aria-hidden="true">
                                       {matchesSort?.key === 'outcome'
                                         ? matchesSort.dir === 'asc'
@@ -548,7 +665,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                       setMatchesSort(cycleSort(matchesSort, 'playerOneScore'));
                                     }}
                                   >
-                                    {'P1 Score'}
+                                    {i18n.word('Match.playerOneScore')}
                                     <span aria-hidden="true">
                                       {matchesSort?.key === 'playerOneScore'
                                         ? matchesSort.dir === 'asc'
@@ -580,7 +697,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                       setMatchesSort(cycleSort(matchesSort, 'playerTwoScore'));
                                     }}
                                   >
-                                    {'P2 Score'}
+                                    {i18n.word('Match.playerTwoScore')}
                                     <span aria-hidden="true">
                                       {matchesSort?.key === 'playerTwoScore'
                                         ? matchesSort.dir === 'asc'
@@ -614,7 +731,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                       );
                                     }}
                                   >
-                                    {'P1 Rating Change'}
+                                    {i18n.word('Match.playerOneRatingDelta')}
                                     <span aria-hidden="true">
                                       {matchesSort?.key === 'playerOneRatingDelta'
                                         ? matchesSort.dir === 'asc'
@@ -648,7 +765,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                       );
                                     }}
                                   >
-                                    {'P2 Rating Change'}
+                                    {i18n.word('Match.playerTwoRatingDelta')}
                                     <span aria-hidden="true">
                                       {matchesSort?.key === 'playerTwoRatingDelta'
                                         ? matchesSort.dir === 'asc'
@@ -680,7 +797,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                       setMatchesSort(cycleSort(matchesSort, 'recordedBy'));
                                     }}
                                   >
-                                    {'Recorder'}
+                                    {i18n.word('Match.recordedBy')}
                                     <span aria-hidden="true">
                                       {matchesSort?.key === 'recordedBy'
                                         ? matchesSort.dir === 'asc'
@@ -712,7 +829,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                       setMatchesSort(cycleSort(matchesSort, 'createdAt'));
                                     }}
                                   >
-                                    {'Created At'}
+                                    {i18n.word('Match.createdAt')}
                                     <span aria-hidden="true">
                                       {matchesSort?.key === 'createdAt'
                                         ? matchesSort.dir === 'asc'
@@ -745,7 +862,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                         setMatchesSort(cycleSort(matchesSort, 'gameDisplayName'));
                                       }}
                                     >
-                                      {'Game Display Name'}
+                                      {i18n.word('Match.gameDisplayName')}
                                       <span aria-hidden="true">
                                         {matchesSort?.key === 'gameDisplayName'
                                           ? matchesSort.dir === 'asc'
@@ -768,7 +885,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                     <button
                                       type="button"
                                       className="h-8 px-1.5 inline-flex items-center gap-1.5 rounded-md text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                                      aria-label={'Toggle columns'}
+                                      aria-label={i18n.chrome.toggleColumns}
                                     >
                                       <SlidersHorizontalIcon className="h-4 w-4" />
                                     </button>
@@ -785,6 +902,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(0)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              0
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(0)) {
@@ -794,7 +916,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
@@ -810,6 +932,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               type="checkbox"
                                               className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                               checked={!matchesHiddenColumns.has(1)}
+                                              disabled={isLastShownColumn(
+                                                matchesHiddenColumns,
+                                                matchesReadableColumns,
+                                                1
+                                              )}
                                               onChange={() => {
                                                 const next = new Set(matchesHiddenColumns);
                                                 if (next.has(1)) {
@@ -819,13 +946,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                                 }
                                                 setStoredHiddenColumns(
                                                   'matches',
-                                                  matchesColumnLabels,
+                                                  matchesColumnKeys,
                                                   next
                                                 );
                                                 setMatchesHiddenColumns(next);
                                               }}
                                             />
-                                            <span>{'Game & Variant'}</span>
+                                            <span>{i18n.word("'Game & Variant'")}</span>
                                           </label>
                                         )}
                                       {canReadField(permissions, 'matches', 'status') && (
@@ -834,6 +961,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(2)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              2
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(2)) {
@@ -843,7 +975,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
@@ -858,6 +990,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(3)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              3
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(3)) {
@@ -867,7 +1004,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
@@ -882,6 +1019,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(4)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              4
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(4)) {
@@ -891,13 +1033,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Game'}</span>
+                                          <span>{i18n.word('Match.game')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'matches', 'playerOneId') && (
@@ -906,6 +1048,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(5)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              5
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(5)) {
@@ -915,13 +1062,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Player 1'}</span>
+                                          <span>{i18n.word('Match.playerOne')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'matches', 'playerTwoId') && (
@@ -930,6 +1077,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(6)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              6
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(6)) {
@@ -939,13 +1091,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Player 2'}</span>
+                                          <span>{i18n.word('Match.playerTwo')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'matches', 'outcome') && (
@@ -954,6 +1106,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(7)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              7
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(7)) {
@@ -963,13 +1120,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Outcome'}</span>
+                                          <span>{i18n.word('Match.outcome')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'matches', 'playerOneScore') && (
@@ -978,6 +1135,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(8)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              8
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(8)) {
@@ -987,13 +1149,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'P1 Score'}</span>
+                                          <span>{i18n.word('Match.playerOneScore')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'matches', 'playerTwoScore') && (
@@ -1002,6 +1164,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(9)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              9
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(9)) {
@@ -1011,13 +1178,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'P2 Score'}</span>
+                                          <span>{i18n.word('Match.playerTwoScore')}</span>
                                         </label>
                                       )}
                                       {canReadField(
@@ -1030,6 +1197,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(10)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              10
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(10)) {
@@ -1039,13 +1211,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'P1 Rating Change'}</span>
+                                          <span>{i18n.word('Match.playerOneRatingDelta')}</span>
                                         </label>
                                       )}
                                       {canReadField(
@@ -1058,6 +1230,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(11)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              11
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(11)) {
@@ -1067,13 +1244,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'P2 Rating Change'}</span>
+                                          <span>{i18n.word('Match.playerTwoRatingDelta')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'matches', 'recordedById') && (
@@ -1082,6 +1259,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(12)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              12
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(12)) {
@@ -1091,13 +1273,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Recorder'}</span>
+                                          <span>{i18n.word('Match.recordedBy')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'matches', 'createdAt') && (
@@ -1106,6 +1288,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(13)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              13
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(13)) {
@@ -1115,13 +1302,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Created At'}</span>
+                                          <span>{i18n.word('Match.createdAt')}</span>
                                         </label>
                                       )}
                                       {canReadField(permissions, 'matches', 'gameDisplayName') && (
@@ -1130,6 +1317,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                             type="checkbox"
                                             className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                                             checked={!matchesHiddenColumns.has(14)}
+                                            disabled={isLastShownColumn(
+                                              matchesHiddenColumns,
+                                              matchesReadableColumns,
+                                              14
+                                            )}
                                             onChange={() => {
                                               const next = new Set(matchesHiddenColumns);
                                               if (next.has(14)) {
@@ -1139,13 +1331,13 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                               }
                                               setStoredHiddenColumns(
                                                 'matches',
-                                                matchesColumnLabels,
+                                                matchesColumnKeys,
                                                 next
                                               );
                                               setMatchesHiddenColumns(next);
                                             }}
                                           />
-                                          <span>{'Game Display Name'}</span>
+                                          <span>{i18n.word('Match.gameDisplayName')}</span>
                                         </label>
                                       )}
                                     </Popover.Content>
@@ -1163,15 +1355,19 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 className="px-4 py-8 text-center text-muted-foreground"
                                 role="status"
                               >
-                                {matchesMatches.length === 0 ? 'No data yet' : 'No matches'}
+                                {matchesMatches.length === 0
+                                  ? i18n.chrome.noDataYet
+                                  : i18n.chrome.noMatches}
                               </td>
                             </tr>
                           )}
                           {pagedMatches.map((item) => (
                             <tr
                               key={item.id}
-                              onClick={() => {
-                                setSelectedId(item.id);
+                              onClick={(clickEvent) => {
+                                if (isOwnClick(clickEvent)) {
+                                  setSelectedId(item.id);
+                                }
                               }}
                               className="group/row border-b border-border/50 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer"
                             >
@@ -1192,8 +1388,8 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                       <RecordChip
                                         label={String(item.title)}
                                         icon={<SwordsIcon className="h-3.5 w-3.5" />}
-                                        className="break-words text-sm"
-                                        data-ls="e3a248f1d8"
+                                        className="min-w-min text-sm"
+                                        data-ls="f9d8b14dc2"
                                       />
                                     </div>
                                   </td>
@@ -1203,15 +1399,17 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'games', 'displayName') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Game & Variant'}
+                                    data-label={i18n.word("'Game & Variant'")}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="4456f8f632">
-                                        {games.find((gameType) => gameType.id === item.gameId)
-                                          ?.displayName !== undefined
-                                          ? games.find((gameType) => gameType.id === item.gameId)
-                                              ?.displayName
-                                          : '—'}
+                                      <span className="min-w-min text-sm" data-ls="849f40b845">
+                                        {gamesComplete.find(
+                                          (gameType) => gameType.id === item.gameId
+                                        )?.displayName !== undefined
+                                          ? gamesComplete.find(
+                                              (gameType) => gameType.id === item.gameId
+                                            )?.displayName
+                                          : i18n.chrome.unresolvedReference}
                                       </span>
                                     </div>
                                   </td>
@@ -1229,11 +1427,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                         >
                                           <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
                                           {new Map([
-                                            ['scheduled', 'Scheduled'],
-                                            ['inProgress', 'In Progress'],
-                                            ['completed', 'Completed'],
-                                            ['disputed', 'Disputed'],
-                                            ['cancelled', 'Cancelled'],
+                                            ['scheduled', i18n.word("'Scheduled'")],
+                                            ['inProgress', i18n.word("'In Progress'")],
+                                            ['completed', i18n.word("'Completed'")],
+                                            ['disputed', i18n.word("'Disputed'")],
+                                            ['cancelled', i18n.word("'Cancelled'")],
                                           ]).get(item.status) ?? item.status}
                                         </span>
                                       )}
@@ -1248,11 +1446,11 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       <span
-                                        className="whitespace-nowrap text-sm"
-                                        data-ls="15b39d6959"
+                                        className="shrink-0 whitespace-nowrap text-sm"
+                                        data-ls="62d951551f"
                                       >
                                         {item.scheduledAt
-                                          ? new Date(item.scheduledAt).toLocaleString('en', {
+                                          ? new Date(item.scheduledAt).toLocaleString(i18n.locale, {
                                               dateStyle: 'medium',
                                               timeStyle: 'short',
                                             })
@@ -1265,27 +1463,29 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'gameId') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Game'}
+                                    data-label={i18n.word('Match.game')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      {games.find((gameType) => gameType.id === item.gameId) !==
-                                      undefined ? (
+                                      {gamesComplete.find(
+                                        (gameType) => gameType.id === item.gameId
+                                      ) !== undefined ? (
                                         <>
                                           <RecordChip
                                             collection="games"
                                             id={item.gameId}
                                             label={String(
-                                              games.find((gameType) => gameType.id === item.gameId)
-                                                ?.name ?? ''
+                                              gamesComplete.find(
+                                                (gameType) => gameType.id === item.gameId
+                                              )?.name ?? ''
                                             )}
                                             icon={<DicesIcon className="h-3.5 w-3.5" />}
-                                            className="break-words text-sm"
-                                            data-ls="3e620ab5a0"
+                                            className="min-w-min text-sm"
+                                            data-ls="b649f5520f"
                                           />
                                         </>
                                       ) : (
-                                        <span className="break-words text-sm" data-ls="3e620ab5a0">
-                                          {'—'}
+                                        <span className="min-w-min text-sm" data-ls="b649f5520f">
+                                          {i18n.chrome.unresolvedReference}
                                         </span>
                                       )}
                                     </div>
@@ -1295,28 +1495,29 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'playerOneId') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Player 1'}
+                                    data-label={i18n.word('Match.playerOne')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      {players.find((player) => player.id === item.playerOneId) !==
-                                      undefined ? (
+                                      {playersComplete.find(
+                                        (player) => player.id === item.playerOneId
+                                      ) !== undefined ? (
                                         <>
                                           <RecordChip
                                             collection="players"
                                             id={item.playerOneId}
                                             label={String(
-                                              players.find(
+                                              playersComplete.find(
                                                 (player) => player.id === item.playerOneId
                                               )?.nickname ?? ''
                                             )}
                                             icon={<UserIcon className="h-3.5 w-3.5" />}
-                                            className="break-words text-sm"
-                                            data-ls="60fb12dbf7"
+                                            className="min-w-min text-sm"
+                                            data-ls="3510ee9a50"
                                           />
                                         </>
                                       ) : (
-                                        <span className="break-words text-sm" data-ls="60fb12dbf7">
-                                          {'—'}
+                                        <span className="min-w-min text-sm" data-ls="3510ee9a50">
+                                          {i18n.chrome.unresolvedReference}
                                         </span>
                                       )}
                                     </div>
@@ -1326,28 +1527,29 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'playerTwoId') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Player 2'}
+                                    data-label={i18n.word('Match.playerTwo')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      {players.find((player) => player.id === item.playerTwoId) !==
-                                      undefined ? (
+                                      {playersComplete.find(
+                                        (player) => player.id === item.playerTwoId
+                                      ) !== undefined ? (
                                         <>
                                           <RecordChip
                                             collection="players"
                                             id={item.playerTwoId}
                                             label={String(
-                                              players.find(
+                                              playersComplete.find(
                                                 (player) => player.id === item.playerTwoId
                                               )?.nickname ?? ''
                                             )}
                                             icon={<UserIcon className="h-3.5 w-3.5" />}
-                                            className="break-words text-sm"
-                                            data-ls="32d18ca20d"
+                                            className="min-w-min text-sm"
+                                            data-ls="f3d6e1cc06"
                                           />
                                         </>
                                       ) : (
-                                        <span className="break-words text-sm" data-ls="32d18ca20d">
-                                          {'—'}
+                                        <span className="min-w-min text-sm" data-ls="f3d6e1cc06">
+                                          {i18n.chrome.unresolvedReference}
                                         </span>
                                       )}
                                     </div>
@@ -1357,14 +1559,14 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'outcome') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Outcome'}
+                                    data-label={i18n.word('Match.outcome')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="36e484389e">
+                                      <span className="min-w-min text-sm" data-ls="960baee1ed">
                                         {new Map([
-                                          ['playerOneWin', 'Player 1 Victory'],
-                                          ['playerTwoWin', 'Player 2 Victory'],
-                                          ['draw', 'Draw'],
+                                          ['playerOneWin', i18n.word("'Player 1 Victory'")],
+                                          ['playerTwoWin', i18n.word("'Player 2 Victory'")],
+                                          ['draw', i18n.word("'Draw'")],
                                         ]).get(item.outcome) ?? item.outcome}
                                       </span>
                                     </div>
@@ -1374,12 +1576,12 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'playerOneScore') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'P1 Score'}
+                                    data-label={i18n.word('Match.playerOneScore')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       <span
-                                        className="whitespace-nowrap text-sm"
-                                        data-ls="a23faa50f1"
+                                        className="shrink-0 whitespace-nowrap text-sm"
+                                        data-ls="c3979ff474"
                                       >
                                         {item.playerOneScore}
                                       </span>
@@ -1390,12 +1592,12 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'playerTwoScore') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'P2 Score'}
+                                    data-label={i18n.word('Match.playerTwoScore')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       <span
-                                        className="whitespace-nowrap text-sm"
-                                        data-ls="724724c0da"
+                                        className="shrink-0 whitespace-nowrap text-sm"
+                                        data-ls="ddb1a21d14"
                                       >
                                         {item.playerTwoScore}
                                       </span>
@@ -1406,10 +1608,10 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'playerOneRatingDelta') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'P1 Rating Change'}
+                                    data-label={i18n.word('Match.playerOneRatingDelta')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="bbfaacdc33">
+                                      <span className="min-w-min text-sm" data-ls="961598f50f">
                                         {item.playerOneRatingDelta}
                                       </span>
                                     </div>
@@ -1419,10 +1621,10 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'playerTwoRatingDelta') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'P2 Rating Change'}
+                                    data-label={i18n.word('Match.playerTwoRatingDelta')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="63c5437f90">
+                                      <span className="min-w-min text-sm" data-ls="034716fda2">
                                         {item.playerTwoRatingDelta}
                                       </span>
                                     </div>
@@ -1432,15 +1634,15 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'recordedById') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Recorder'}
+                                    data-label={i18n.word('Match.recordedBy')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       {item.recordedById ? (
                                         <RecordChip
                                           label={userLabel(item.recordedById)}
                                           initials
-                                          className="break-words text-sm"
-                                          data-ls="4898f39da7"
+                                          className="min-w-min text-sm"
+                                          data-ls="33fc2c9de7"
                                         />
                                       ) : null}
                                     </div>
@@ -1450,12 +1652,20 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'createdAt') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Created At'}
+                                    data-label={i18n.word('Match.createdAt')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
                                       <span
-                                        className="whitespace-nowrap text-sm"
-                                        data-ls="75ef79dae3"
+                                        className="shrink-0 whitespace-nowrap text-sm"
+                                        data-ls="0cb8161398"
+                                        title={
+                                          item.createdAt
+                                            ? new Date(item.createdAt).toLocaleString(i18n.locale, {
+                                                dateStyle: 'medium',
+                                                timeStyle: 'short',
+                                              })
+                                            : undefined
+                                        }
                                       >
                                         {item.createdAt ? relativeTime(item.createdAt) : ''}
                                       </span>
@@ -1466,21 +1676,32 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                 canReadField(permissions, 'matches', 'gameDisplayName') && (
                                   <td
                                     className="px-4 py-3 align-middle whitespace-nowrap"
-                                    data-label={'Game Display Name'}
+                                    data-label={i18n.word('Match.gameDisplayName')}
                                   >
                                     <div className="ui-cell max-w-xs truncate">
-                                      <span className="break-words text-sm" data-ls="026a68e4bd">
+                                      <span className="min-w-min text-sm" data-ls="dc503ad5b0">
                                         {item.gameDisplayName}
                                       </span>
                                     </div>
                                   </td>
                                 )}
-                              <td className="w-px px-3 py-2 text-right align-middle whitespace-nowrap opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity">
+                              <td
+                                className={
+                                  item._sample
+                                    ? 'w-px px-3 py-2 text-right align-middle whitespace-nowrap'
+                                    : 'w-px px-3 py-2 text-right align-middle whitespace-nowrap opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity'
+                                }
+                              >
                                 <div className="inline-flex items-center gap-1">
+                                  {item._sample && (
+                                    <span className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+                                      {i18n.chrome.sampleRecord}
+                                    </span>
+                                  )}
                                   {(permissions?.['matches']?.update ?? false) && (
                                     <button
                                       type="button"
-                                      aria-label={'Edit'}
+                                      aria-label={i18n.chrome.edit}
                                       onClick={(clickEvent) => {
                                         clickEvent.stopPropagation();
                                         setEditingMatches(item);
@@ -1493,7 +1714,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                                   {(permissions?.['matches']?.delete ?? false) && (
                                     <button
                                       type="button"
-                                      aria-label={'Delete'}
+                                      aria-label={i18n.chrome.delete}
                                       onClick={(clickEvent) => {
                                         clickEvent.stopPropagation();
                                         runWithToast(
@@ -1515,11 +1736,16 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                       </table>
                       {(matchesPageCount > 1 || matchesHasMore) && (
                         <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border text-sm text-muted-foreground print:hidden">
-                          <span>{`Page ${matchesPageSafe + 1} of ${matchesPageCount}`}</span>
+                          <span>
+                            {i18n.fill(i18n.chrome.pageIndicator, {
+                              page: matchesPageSafe + 1,
+                              count: matchesPageCount,
+                            })}
+                          </span>
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              aria-label={'Previous page'}
+                              aria-label={i18n.chrome.previousPage}
                               onClick={() => {
                                 setMatchesPage(Math.max(0, matchesPageSafe - 1));
                               }}
@@ -1530,7 +1756,7 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
                             </button>
                             <button
                               type="button"
-                              aria-label={'Next page'}
+                              aria-label={i18n.chrome.nextPage}
                               onClick={() => {
                                 if (matchesPageSafe >= matchesPageCount - 1 && matchesHasMore) {
                                   runWithToast(
@@ -1614,23 +1840,26 @@ export function MatchesList(_props: { onNavigate?: (view: string) => void }): JS
         }}
       />
       <MatchEditDialog
-        open={creatingMatches}
+        open={creatingMatches !== null}
         editing={null}
         isBusy={false}
+        defaults={creatingMatches ?? {}}
         onSaved={() => {
           matchesRuleViolations.reload();
         }}
         onClose={() => {
-          setCreatingMatches(false);
+          setCreatingMatches(null);
           runWithToast(reloadMatches());
         }}
       />
       <ConfirmDeleteDialog
         open={deleteConfirmMatch !== null}
-        title="Delete match"
-        description={`Are you sure you want to delete "${deleteConfirmMatch?.label ?? ''}"? This action cannot be undone.`}
-        cancelLabel="Cancel"
-        deleteLabel="Delete"
+        title={i18n.fill(i18n.chrome.deleteTitle, { name: i18n.word('Match') })}
+        description={i18n.fill(i18n.chrome.deleteConfirm, {
+          item: deleteConfirmMatch?.label ?? '',
+        })}
+        cancelLabel={i18n.chrome.cancel}
+        deleteLabel={i18n.chrome.delete}
         onCancel={() => {
           setDeleteConfirmMatch(null);
         }}

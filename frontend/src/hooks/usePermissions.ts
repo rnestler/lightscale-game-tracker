@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import {
   createContext,
   createElement,
@@ -41,6 +42,16 @@ export function canReadField(
   return resource.readFields.includes(field);
 }
 
+export function canReadCollection(
+  permissions: PermissionsMap | null,
+  resourceName: string
+): boolean {
+  if (!permissions) {
+    return false;
+  }
+  return permissions[resourceName]?.read ?? true;
+}
+
 export function canUpdateField(
   permissions: PermissionsMap | null,
   resourceName: string,
@@ -79,7 +90,6 @@ interface PermissionsContextValue {
   hasManagementAccess: boolean;
   hasAppAccess: boolean;
   isAdmin: boolean;
-  isCreator: boolean;
   allowAccountDeletion: boolean;
   showStaleData: boolean;
   roles: string[];
@@ -94,7 +104,6 @@ export function PermissionsProvider({ children }: { children: ReactNode }): Reac
   const [hasManagementAccess, setHasManagementAccess] = useState(false);
   const [hasAppAccess, setHasAppAccess] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isCreator, setIsCreator] = useState(false);
   const [allowAccountDeletion, setAllowAccountDeletion] = useState(false);
   const [showStaleData, setShowStaleData] = useState(false);
   const [roles, setRoles] = useState<string[]>([]);
@@ -109,14 +118,13 @@ export function PermissionsProvider({ children }: { children: ReactNode }): Reac
       });
       reportReachable();
       if (!response.ok) {
-        throw new Error('Permissions could not be loaded.');
+        throw new Error(i18n.chrome.errorLoadPermissionsFailed);
       }
       const data = (await response.json()) as {
         permissions: PermissionsMap;
         hasManagementAccess?: boolean;
         hasAppAccess?: boolean;
         isAdmin?: boolean;
-        isCreator?: boolean;
         allowAccountDeletion?: boolean;
         showStaleData?: boolean;
         roles?: string[];
@@ -125,7 +133,6 @@ export function PermissionsProvider({ children }: { children: ReactNode }): Reac
       setHasManagementAccess(data.hasManagementAccess ?? false);
       setHasAppAccess(data.hasAppAccess ?? false);
       setIsAdmin(data.isAdmin ?? false);
-      setIsCreator(data.isCreator ?? false);
       setAllowAccountDeletion(data.allowAccountDeletion ?? false);
       setShowStaleData(data.showStaleData ?? false);
       setRoles(data.roles ?? []);
@@ -139,7 +146,6 @@ export function PermissionsProvider({ children }: { children: ReactNode }): Reac
       setHasManagementAccess(false);
       setHasAppAccess(false);
       setIsAdmin(false);
-      setIsCreator(false);
       setAllowAccountDeletion(false);
       setShowStaleData(false);
       setRoles([]);
@@ -179,7 +185,6 @@ export function PermissionsProvider({ children }: { children: ReactNode }): Reac
         hasManagementAccess,
         hasAppAccess,
         isAdmin,
-        isCreator,
         allowAccountDeletion,
         showStaleData,
         roles,
@@ -197,7 +202,6 @@ export function usePermissions(): {
   hasManagementAccess: boolean;
   hasAppAccess: boolean;
   isAdmin: boolean;
-  isCreator: boolean;
   allowAccountDeletion: boolean;
   showStaleData: boolean;
   roles: string[];
@@ -212,7 +216,6 @@ export function usePermissions(): {
   const hasManagementAccess = context?.hasManagementAccess ?? false;
   const hasAppAccess = context?.hasAppAccess ?? false;
   const isAdmin = context?.isAdmin ?? false;
-  const isCreator = context?.isCreator ?? false;
   const allowAccountDeletion = context?.allowAccountDeletion ?? false;
   const showStaleData = context?.showStaleData ?? false;
   const roles = context?.roles ?? [];
@@ -237,7 +240,6 @@ export function usePermissions(): {
     hasManagementAccess,
     hasAppAccess,
     isAdmin,
-    isCreator,
     allowAccountDeletion,
     showStaleData,
     roles,

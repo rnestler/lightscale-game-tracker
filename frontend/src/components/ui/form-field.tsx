@@ -1,3 +1,4 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
@@ -270,7 +271,7 @@ export function FormTagInput({ value, onChange, placeholder }: FormTagInputProps
               removeAt(i);
             }}
             className="rounded-full hover:bg-primary/20 p-0.5 transition-colors"
-            aria-label={`Remove ${tag}`}
+            aria-label={`${i18n.chrome.remove} ${tag}`}
           >
             <X className="h-3 w-3" />
           </button>
@@ -383,35 +384,35 @@ function RichTextToolbar(): JSX.Element {
   return (
     <div
       role="toolbar"
-      aria-label="Text formatting"
+      aria-label={i18n.chrome.richTextToolbar}
       className="flex items-center gap-0.5 border-b border-input bg-muted px-1.5 py-1"
     >
       <RichTextToolbarButton
-        title="Bold"
+        title={i18n.chrome.formatBold}
         label="B"
         className="font-bold"
         onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}
       />
       <RichTextToolbarButton
-        title="Italic"
+        title={i18n.chrome.formatItalic}
         label="I"
         className="italic"
         onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}
       />
       <RichTextToolbarButton
-        title="Underline"
+        title={i18n.chrome.formatUnderline}
         label="U"
         className="underline"
         onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline')}
       />
       <div className="mx-1 h-4 w-px bg-border" />
       <RichTextToolbarButton
-        title="Bullet list"
+        title={i18n.chrome.bulletList}
         label="•••"
         onClick={() => editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined)}
       />
       <RichTextToolbarButton
-        title="Numbered list"
+        title={i18n.chrome.numberedList}
         label="1."
         onClick={() => editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)}
       />
@@ -580,13 +581,13 @@ export function FormSelect({
   value,
   onChange,
   options,
-  placeholder = 'Select...',
+  placeholder = i18n.chrome.selectOption,
   disabled = false,
   unavailable = [],
   currentValue,
   onOpen,
   onCreateNew,
-  createNewLabel = 'Create new...',
+  createNewLabel = i18n.chrome.createNew,
 }: FormSelectProps): JSX.Element {
   function handleChange(selected: string): void {
     if (selected === CREATE_NEW_VALUE) {
@@ -702,7 +703,7 @@ export function FormCombobox({
   value,
   onChange,
   options,
-  placeholder = 'Select or type...',
+  placeholder = i18n.chrome.selectOrType,
   disabled = false,
   unavailable = [],
   currentValue,
@@ -882,6 +883,24 @@ export function FormSwitch({ value, onChange }: FormSwitchProps): JSX.Element {
   return <Switch checked={value} onCheckedChange={onChange} />;
 }
 
+interface FormTimePickerProps {
+  value: string;
+  onChange: (value: string) => void;
+}
+
+export function FormTimePicker({ value, onChange }: FormTimePickerProps): JSX.Element {
+  return (
+    <input
+      type="time"
+      value={value.slice(0, 5)}
+      onChange={(e) => {
+        onChange(e.target.value);
+      }}
+      className="h-10 w-full rounded-lg border border-border bg-background px-4 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-0 focus-visible:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+    />
+  );
+}
+
 interface FormDateTimePickerProps {
   value: string;
   onChange: (value: string) => void;
@@ -950,7 +969,7 @@ export function FormDatePicker({
         className="h-10 w-full rounded-lg border border-border bg-transparent px-4 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-0 focus-visible:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
       />
       {value !== '' && unavailable.includes(value) && (
-        <p className="mt-1 text-xs text-destructive">Fully booked</p>
+        <p className="mt-1 text-xs text-destructive">{i18n.chrome.fullyBooked}</p>
       )}
     </div>
   );
@@ -970,7 +989,7 @@ interface UserEntry {
 export function FormUserMultiSelect({
   value,
   onChange,
-  placeholder = 'Search users…',
+  placeholder = i18n.chrome.searchUsers,
 }: FormUserMultiSelectProps): JSX.Element {
   const [users, setUsers] = React.useState<UserEntry[]>([]);
   const [query, setQuery] = React.useState('');
@@ -1036,7 +1055,7 @@ export function FormUserMultiSelect({
               key={id}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-accent/15 text-accent-text text-xs font-medium"
             >
-              {user?.label ?? 'Unknown user'}
+              {user?.label ?? i18n.chrome.unknownUser}
               <button
                 type="button"
                 onClick={(e) => {
@@ -1044,7 +1063,7 @@ export function FormUserMultiSelect({
                   onChange(value.filter((v) => v !== id));
                 }}
                 className="hover:text-destructive-text transition-colors leading-none text-base"
-                aria-label="Remove"
+                aria-label={i18n.chrome.remove}
               >
                 ×
               </button>
@@ -1052,7 +1071,9 @@ export function FormUserMultiSelect({
           );
         })}
         {!open && value.length === 0 && (
-          <span className="flex-1 text-sm text-muted-foreground py-0.5">{placeholder}</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground py-0.5">
+            {placeholder}
+          </span>
         )}
         {open && (
           <input
@@ -1062,7 +1083,7 @@ export function FormUserMultiSelect({
             onChange={(e) => {
               setQuery(e.target.value);
             }}
-            placeholder="Search…"
+            placeholder={i18n.chrome.search}
             className="flex-1 min-w-[8rem] bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
             onClick={(e) => {
               e.stopPropagation();
@@ -1073,7 +1094,7 @@ export function FormUserMultiSelect({
       {open && (
         <ul className="absolute z-50 w-full max-h-40 overflow-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-lg">
           {available.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-muted-foreground">No users found</li>
+            <li className="px-3 py-2 text-sm text-muted-foreground">{i18n.chrome.noUsersFound}</li>
           ) : (
             available.map((u) => (
               <li key={u.id}>
@@ -1107,7 +1128,7 @@ interface FormUserSelectProps {
 export function FormUserSelect({
   value,
   onChange,
-  placeholder = 'Select user…',
+  placeholder = i18n.chrome.selectUser,
 }: FormUserSelectProps): JSX.Element {
   const [users, setUsers] = React.useState<UserEntry[]>([]);
   const [query, setQuery] = React.useState('');
@@ -1170,8 +1191,8 @@ export function FormUserSelect({
           <span
             className={
               selected
-                ? 'flex-1 text-sm text-foreground py-0.5'
-                : 'flex-1 text-sm text-muted-foreground py-0.5'
+                ? 'min-w-0 flex-1 truncate text-sm text-foreground py-0.5'
+                : 'min-w-0 flex-1 truncate text-sm text-muted-foreground py-0.5'
             }
           >
             {selected ? selected.label : placeholder}
@@ -1185,7 +1206,7 @@ export function FormUserSelect({
             onChange={(e) => {
               setQuery(e.target.value);
             }}
-            placeholder="Search…"
+            placeholder={i18n.chrome.search}
             className="flex-1 min-w-[8rem] bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
             onClick={(e) => {
               e.stopPropagation();
@@ -1200,7 +1221,7 @@ export function FormUserSelect({
               onChange('');
             }}
             className="hover:text-destructive-text transition-colors leading-none text-base"
-            aria-label="Remove"
+            aria-label={i18n.chrome.remove}
           >
             ×
           </button>
@@ -1209,7 +1230,7 @@ export function FormUserSelect({
       {open && (
         <ul className="absolute z-50 w-full max-h-40 overflow-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-lg">
           {available.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-muted-foreground">No users found</li>
+            <li className="px-3 py-2 text-sm text-muted-foreground">{i18n.chrome.noUsersFound}</li>
           ) : (
             available.map((u) => (
               <li key={u.id}>

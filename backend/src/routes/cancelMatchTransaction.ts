@@ -16,6 +16,7 @@ import {
 import { recordRuntimeError } from '../utils/diagnostics.js';
 import { PreconditionError } from '../utils/precondition.js';
 import { errorRefusal } from '../error-refusals.js';
+import { ConstraintViolationError } from '../constraints.js';
 import { transactionContext } from '../transaction-context.js';
 import { performCancelMatch } from '../transactions/cancelMatch.js';
 
@@ -77,8 +78,10 @@ cancelMatchTransactionRouter.post('/', async (req: Request, res: Response) => {
     } catch (error) {
       recordRuntimeError('cancelMatch', error);
       const refusal = errorRefusal(error);
-      if (error instanceof PreconditionError) {
-        res.status(422).json({ error: error.message, refusal: error.refusal });
+      if (error instanceof PreconditionError || error instanceof ConstraintViolationError) {
+        res
+          .status(422)
+          .json({ error: error.message, code: 'PRECONDITION_FAILED', refusal: error.refusal });
       } else if (refusal !== null) {
         res.status(refusal.status).json(refusal.body);
       } else if (isRetriableTransactionError(error)) {

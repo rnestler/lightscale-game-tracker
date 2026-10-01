@@ -30,7 +30,7 @@ export const leaderboardsApi = {
     return httpClient.get<string[]>('/leaderboards');
   },
   multiGet(ids: string[]): Promise<$Domain.LeaderboardEntry[]> {
-    return httpClient.query<$Domain.LeaderboardEntry[]>('/leaderboards/multi-get', { ids });
+    return httpClient.records<$Domain.LeaderboardEntry>('/leaderboards/multi-get', ids);
   },
   query(request: QueryRequest): Promise<QueryPage> {
     return httpClient.query<QueryPage>('/leaderboards/query', request);

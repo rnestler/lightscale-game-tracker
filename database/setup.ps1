@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-Get-Content "$dir\..\.env" | ForEach-Object {
+Get-Content "$dir\..\.env" -Encoding UTF8 | ForEach-Object {
   if ($_ -match '^([^#=]+)=(.*)$') {
     $name = $Matches[1].Trim()
     $value = $Matches[2].Trim()
@@ -62,10 +62,8 @@ if (-not $adminArgs) {
   exit 1
 }
 
-$includesData = if (Test-Path "$dir\data.sql") { "true" } else { "false" }
-
 Write-Host "Creating database and user..."
-psql @adminArgs -w -v ON_ERROR_STOP=1 -v "includes_data=$includesData" -d $adminDatabase -f "$dir\setup.sql"
+psql @adminArgs -w -v ON_ERROR_STOP=1 -d $adminDatabase -f "$dir\setup.sql"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""

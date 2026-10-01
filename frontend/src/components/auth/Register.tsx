@@ -1,8 +1,10 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { startSocialSignIn } from '../../api/socialSignIn.js';
+import { returnAfterSignIn } from '../../utils/recordNavigation.js';
 import { useSetupStatus } from '../../api/setupStatus.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 import { VerifyEmailNotice } from './VerifyEmailNotice.js';
@@ -18,7 +20,7 @@ function providerTitle(providers: string[], provider: string, label: string): st
   if (providers.includes(provider)) {
     return label;
   }
-  return `${label}: Not configured`;
+  return `${label}: ${i18n.chrome.socialProviderNotConfigured}`;
 }
 
 export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
@@ -83,12 +85,12 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
     setError(null);
 
     if (!name.trim()) {
-      setError('Name is required');
+      setError(i18n.chrome.nameRequired);
       return;
     }
 
     if (passwordRef.current !== confirmPasswordRef.current) {
-      setError('The new password and its confirmation do not match.');
+      setError(i18n.chrome.passwordsDoNotMatch);
       return;
     }
 
@@ -101,10 +103,10 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
         setPendingVerificationEmail(email);
         return;
       }
-      window.location.href = '/app';
+      window.location.href = returnAfterSignIn();
     } catch (err) {
       resetPasswordFields();
-      setError(getErrorMessage(err, 'Registration failed'));
+      setError(getErrorMessage(err, i18n.chrome.registrationFailed));
     } finally {
       setIsLoading(false);
     }
@@ -114,14 +116,14 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
     return (
       <div className="w-full flex flex-col gap-5">
         <div className="rounded-lg border border-border bg-secondary p-4 text-sm text-foreground">
-          Sign-up is by invitation only. Use the invitation link sent to your email.
+          {i18n.chrome.invitationOnlyNotice}
         </div>
         <Button
           type="button"
           onClick={onSwitchToLogin}
           className="h-10 rounded-lg bg-transparent px-6 text-sm font-medium text-foreground hover:bg-secondary hover:text-secondary-foreground"
         >
-          Back to sign in
+          {i18n.chrome.backToSignIn}
         </Button>
       </div>
     );
@@ -154,7 +156,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
         >
           <div className="flex flex-col gap-2">
             <label htmlFor="name" className="text-sm font-medium text-foreground">
-              Name
+              {i18n.chrome.nameLabel}
             </label>
             <Input
               id="name"
@@ -171,7 +173,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
 
           <div className="flex flex-col gap-2">
             <label htmlFor="email" className="text-sm font-medium text-foreground">
-              Email
+              {i18n.chrome.emailLabel}
             </label>
             <Input
               id="email"
@@ -190,7 +192,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
 
           <div className="flex flex-col gap-2">
             <label htmlFor="password" className="text-sm font-medium text-foreground">
-              Password
+              {i18n.chrome.passwordLabel}
             </label>
             <div className="relative">
               <Input
@@ -214,7 +216,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
                 }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 tabIndex={-1}
-                aria-label={showPassword ? 'Hide' : 'Show'}
+                aria-label={showPassword ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -223,7 +225,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
 
           <div className="flex flex-col gap-2">
             <label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">
-              Confirm Password
+              {i18n.chrome.confirmPasswordLabel}
             </label>
             <div className="relative">
               <Input
@@ -247,7 +249,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
                 }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 tabIndex={-1}
-                aria-label={showPassword ? 'Hide' : 'Show'}
+                aria-label={showPassword ? i18n.chrome.hidePassword : i18n.chrome.showPassword}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -265,14 +267,14 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
             disabled={isLoading}
             className="h-10 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? 'Creating account...' : 'Sign Up'}
+            {isLoading ? i18n.chrome.creatingAccount : i18n.chrome.signUp}
           </button>
         </form>
 
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-4">
             <div className="flex-1 border-t border-border" />
-            <span className="text-sm text-muted-foreground">Or continue with</span>
+            <span className="text-sm text-muted-foreground">{i18n.chrome.orContinueWith}</span>
             <div className="flex-1 border-t border-border" />
           </div>
 
@@ -308,30 +310,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
               <span className="truncate">Google</span>
               {!setupStatus.socialProviders.includes('google') && (
                 <span className="absolute -top-2 right-2 rounded-full border border-border bg-background px-1.5 text-[9px] font-bold uppercase tracking-wider leading-relaxed text-muted-foreground">
-                  Not configured
-                </span>
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                startSocialSignIn('apple');
-              }}
-              disabled={isLoading || !setupStatus.socialProviders.includes('apple')}
-              title={providerTitle(setupStatus.socialProviders, 'apple', 'Apple')}
-              className="relative flex-1 min-w-0 inline-flex items-center justify-center gap-2 bg-secondary text-foreground hover:opacity-90 focus-visible:outline-primary disabled:cursor-not-allowed [&:disabled>svg]:grayscale [&:disabled>svg]:opacity-50"
-            >
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"
-                />
-              </svg>
-              <span className="truncate">Apple</span>
-              {!setupStatus.socialProviders.includes('apple') && (
-                <span className="absolute -top-2 right-2 rounded-full border border-border bg-background px-1.5 text-[9px] font-bold uppercase tracking-wider leading-relaxed text-muted-foreground">
-                  Not configured
+                  {i18n.chrome.socialProviderNotConfigured}
                 </span>
               )}
             </Button>
@@ -354,7 +333,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
               <span className="truncate">Microsoft</span>
               {!setupStatus.socialProviders.includes('microsoft') && (
                 <span className="absolute -top-2 right-2 rounded-full border border-border bg-background px-1.5 text-[9px] font-bold uppercase tracking-wider leading-relaxed text-muted-foreground">
-                  Not configured
+                  {i18n.chrome.socialProviderNotConfigured}
                 </span>
               )}
             </Button>
@@ -368,7 +347,7 @@ export function Register({ onSwitchToLogin }: RegisterProperties): JSX.Element {
             disabled={isLoading}
             className="h-10 rounded-lg bg-transparent px-6 text-sm font-medium text-foreground hover:bg-secondary hover:text-secondary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {'Already have an account? Sign in'}
+            {i18n.chrome.alreadyHaveAccount}
           </button>
         </div>
       </div>

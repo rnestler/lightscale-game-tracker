@@ -11,8 +11,6 @@ import {
 } from '../pagination.js';
 import {
   getEffectiveUserRoles,
-  isAdmin,
-  hasAnyRole,
   hasGrant,
   admissionClause,
   ownedColumn,
@@ -24,7 +22,6 @@ import {
   projectReadableFields,
   writtenColumns,
   queryableFieldSet,
-  readableFieldSet,
   readableFieldSetAllScope,
   unwritableField,
   ownedFlag,
@@ -35,10 +32,14 @@ import {
 } from '../authorization.js';
 import { withTransaction } from '../transaction.js';
 import { auth } from '../auth.js';
-import { ensureReferences } from '../references.js';
+import { nothingStored, storedColumns, unreadableReference } from '../reference-access.js';
 import { isBlankOrDateText } from '../validation.js';
 import { assignedColumns, mergedCandidate, storedTemporal } from '../record-writes.js';
-import { enforceLeaderboardEntryConstraints } from '../constraints.js';
+import {
+  enforceLeaderboardEntryConstraints,
+  ConstraintViolationError,
+  formattedRow,
+} from '../constraints.js';
 import { collectVisibleRuleViolations } from '../rule-violations.js';
 import {
   type AvailabilityTable,
@@ -57,14 +58,14 @@ function getSession(request: Request): ReturnType<typeof auth.api.getSession> {
 
 interface Body {
   [key: string]: unknown;
-  playerId: string;
-  gameId: string;
-  rating: number;
-  matchesPlayed: number;
-  wins: number;
-  losses: number;
-  draws: number;
-  lastPlayedAt: string;
+  playerId?: string;
+  gameId?: string;
+  rating?: number;
+  matchesPlayed?: number;
+  wins?: number;
+  losses?: number;
+  draws?: number;
+  lastPlayedAt?: string;
 }
 
 function isBody(value: unknown): value is Body {
@@ -72,28 +73,47 @@ function isBody(value: unknown): value is Body {
     return false;
   }
   const body = value as Record<string, unknown>;
-  if (!(typeof body['playerId'] === 'string')) {
+  if (!(body['playerId'] === undefined || typeof body['playerId'] === 'string')) {
     return false;
   }
-  if (!(typeof body['gameId'] === 'string')) {
+  if (!(body['gameId'] === undefined || typeof body['gameId'] === 'string')) {
     return false;
   }
-  if (!(typeof body['rating'] === 'number' && Number.isInteger(body['rating']))) {
+  if (!(
+    body['rating'] === undefined ||
+    (typeof body['rating'] === 'number' && Number.isInteger(body['rating']))
+  )) {
     return false;
   }
-  if (!(typeof body['matchesPlayed'] === 'number' && Number.isInteger(body['matchesPlayed']))) {
+  if (!(
+    body['matchesPlayed'] === undefined ||
+    (typeof body['matchesPlayed'] === 'number' && Number.isInteger(body['matchesPlayed']))
+  )) {
     return false;
   }
-  if (!(typeof body['wins'] === 'number' && Number.isInteger(body['wins']))) {
+  if (!(
+    body['wins'] === undefined ||
+    (typeof body['wins'] === 'number' && Number.isInteger(body['wins']))
+  )) {
     return false;
   }
-  if (!(typeof body['losses'] === 'number' && Number.isInteger(body['losses']))) {
+  if (!(
+    body['losses'] === undefined ||
+    (typeof body['losses'] === 'number' && Number.isInteger(body['losses']))
+  )) {
     return false;
   }
-  if (!(typeof body['draws'] === 'number' && Number.isInteger(body['draws']))) {
+  if (!(
+    body['draws'] === undefined ||
+    (typeof body['draws'] === 'number' && Number.isInteger(body['draws']))
+  )) {
     return false;
   }
-  if (!(body['lastPlayedAt'] === '' || isBlankOrDateText(body['lastPlayedAt']))) {
+  if (!(
+    body['lastPlayedAt'] === undefined ||
+    body['lastPlayedAt'] === '' ||
+    isBlankOrDateText(body['lastPlayedAt'])
+  )) {
     return false;
   }
   return true;
@@ -260,6 +280,10 @@ leaderboardsRouter.post('/multi-get', async (request, response) => {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
+  if (body.ids.length > 200) {
+    response.status(400).json({ error: 'ids must list at most 200 records' });
+    return;
+  }
   if (body.ids.length === 0) {
     response.json([]);
     return;
@@ -298,38 +322,70 @@ leaderboardsRouter.get('/:id', async (request, response) => {
 
 async function createLeaderboardEntryRecord(
   response: RefusalAnswer,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  owner: string,
+  caller: Caller
 ): Promise<Record<string, unknown> | undefined> {
   if (!isBody(body)) {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
-  const typedBody: Body = body;
-  const referenceError = await ensureReferences('LeaderboardEntry', typedBody, [
-    { field: 'playerId', table: 'Player' },
-    { field: 'gameId', table: 'GameType' },
-  ]);
-  if (referenceError !== null) {
-    response.status(400).json({ error: referenceError });
-    return;
+  const typedBody: Body = formattedRow('LeaderboardEntry', {
+    ...body,
+    playerId: body.playerId ?? '',
+    gameId: body.gameId ?? '',
+    rating: body.rating ?? 1200,
+    matchesPlayed: body.matchesPlayed ?? 0,
+    wins: body.wins ?? 0,
+    losses: body.losses ?? 0,
+    draws: body.draws ?? 0,
+    lastPlayedAt:
+      body.lastPlayedAt === undefined || body.lastPlayedAt === ''
+        ? new Date().toISOString()
+        : body.lastPlayedAt,
+  });
+  const unreadableField = await unreadableReference(
+    [typedBody],
+    [
+      { field: 'playerId', table: 'Player' },
+      { field: 'gameId', table: 'GameType' },
+    ],
+    caller,
+    nothingStored
+  );
+  if (unreadableField !== null) {
+    throw new ConstraintViolationError({
+      kind: 'referenceGone',
+      type: 'LeaderboardEntry',
+      field: unreadableField,
+    });
   }
   enforceLeaderboardEntryConstraints(typedBody);
   const id = crypto.randomUUID();
-  const inserted = await pool.query<Record<string, unknown>>(
-    'INSERT INTO "LeaderboardEntry" (id, "playerId", "gameId", "rating", "matchesPlayed", "wins", "losses", "draws", "lastPlayedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, "playerId", "gameId", "rating", "matchesPlayed", "wins", "losses", "draws", "lastPlayedAt"',
-    [
-      id,
-      typedBody.playerId,
-      typedBody.gameId,
-      typedBody.rating,
-      typedBody.matchesPlayed,
-      typedBody.wins,
-      typedBody.losses,
-      typedBody.draws,
-      typedBody.lastPlayedAt === '' ? new Date().toISOString() : typedBody.lastPlayedAt,
-    ]
+  const createdRow = await withTransaction<Record<string, unknown>>(
+    pool,
+    async (client): Promise<Record<string, unknown>> => {
+      const inserted = await client.query<Record<string, unknown>>(
+        'INSERT INTO "LeaderboardEntry" (id, "playerId", "gameId", "rating", "matchesPlayed", "wins", "losses", "draws", "lastPlayedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, "playerId", "gameId", "rating", "matchesPlayed", "wins", "losses", "draws", "lastPlayedAt"',
+        [
+          id,
+          typedBody.playerId,
+          typedBody.gameId,
+          typedBody.rating,
+          typedBody.matchesPlayed,
+          typedBody.wins,
+          typedBody.losses,
+          typedBody.draws,
+          storedTemporal(typedBody.lastPlayedAt),
+        ]
+      );
+      await client.query(
+        'INSERT INTO "creator_leaderboards" ("leaderboardEntryId", "userId") VALUES ($1, $2)',
+        [id, owner]
+      );
+      return inserted.rows[0];
+    }
   );
-  const createdRow = inserted.rows[0];
   return createdRow;
 }
 
@@ -340,10 +396,27 @@ leaderboardsRouter.post('/', async (request, response) => {
   }
   const body = request.body as Record<string, unknown>;
   if (typeof body['recordId'] === 'string') {
+    const recordValues: unknown[] = [body['recordId']];
+    const recordAdmission = hasGrant('leaderboards', 'read', access.roles)
+      ? admissionClause('leaderboards', 'read', access, 'f', recordValues)
+      : 'FALSE';
+    const readableRecord = await pool.query(
+      `SELECT 1 FROM "LeaderboardEntry" f${whereClause(['f.id = $1', recordAdmission])}`,
+      recordValues
+    );
+    if (readableRecord.rows.length === 0) {
+      response.status(404).json({ error: 'Record not found' });
+      return;
+    }
     response.status(201).json({ success: true });
     return;
   }
-  const createdRow = await createLeaderboardEntryRecord(response, body);
+  const createdRow = await createLeaderboardEntryRecord(
+    response,
+    body,
+    access.userId ?? '',
+    access
+  );
   if (createdRow === undefined) {
     return;
   }
@@ -368,13 +441,21 @@ leaderboardsRouter.put('/:id', async (request, response) => {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
-  const referenceError = await ensureReferences('LeaderboardEntry', body, [
-    { field: 'playerId', table: 'Player' },
-    { field: 'gameId', table: 'GameType' },
-  ]);
-  if (referenceError !== null) {
-    response.status(400).json({ error: referenceError });
-    return;
+  const unreadableField = await unreadableReference(
+    [body],
+    [
+      { field: 'playerId', table: 'Player' },
+      { field: 'gameId', table: 'GameType' },
+    ],
+    access,
+    () => storedColumns('LeaderboardEntry', request.params.id, ['playerId', 'gameId'])
+  );
+  if (unreadableField !== null) {
+    throw new ConstraintViolationError({
+      kind: 'referenceGone',
+      type: 'LeaderboardEntry',
+      field: unreadableField,
+    });
   }
   const outcome = await withTransaction<WriteOutcome>(
     pool,
@@ -453,6 +534,9 @@ leaderboardsRouter.delete('/:id', async (request, response) => {
       if (existingItem.rows.length === 0) {
         return 'not-found';
       }
+      await client.query('DELETE FROM "creator_leaderboards" WHERE "leaderboardEntryId" = $1', [
+        request.params.id,
+      ]);
       const deleted = await client.query('DELETE FROM "LeaderboardEntry" WHERE id = $1', [
         request.params.id,
       ]);
@@ -477,18 +561,17 @@ leaderboardsViolationsRouter.get('/', async (request, response) => {
     return;
   }
   const values: unknown[] = [];
+  const owned = ownedColumn('leaderboards', 'read', access, 'f', values);
   const admission = admissionClause('leaderboards', 'read', access, 'f', values);
   const { rows } = await pool.query<Record<string, unknown>>(
-    `SELECT f.id FROM "LeaderboardEntry" f${whereClause([admission])}`,
+    `SELECT f.*, ${owned} FROM "LeaderboardEntry" f${whereClause([admission])}`,
     values
   );
-  const visibleIds = rows.map((row) => String(row.id));
   response.json(
     await collectVisibleRuleViolations(
       pool,
       'LeaderboardEntry',
-      new Set(visibleIds),
-      readableFieldSet('leaderboards', access.roles)
+      admitRows('leaderboards', 'read', access.roles, rows)
     )
   );
 });
@@ -529,7 +612,7 @@ const availabilityTable: AvailabilityTable = {
 leaderboardsRouter.post('/availability', async (request, response) => {
   const session = await getSession(request);
   const userRoles = session ? await getEffectiveUserRoles(pool, session.user.id) : ['guest'];
-  if (!isAdmin(userRoles) && !hasAnyRole(userRoles, ['scorekeeper'])) {
+  if (!hasGrant('leaderboards', 'create', userRoles)) {
     response.status(session ? 403 : 401).json({ error: session ? 'Forbidden' : 'Unauthorized' });
     return;
   }

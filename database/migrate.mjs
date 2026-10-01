@@ -2,11 +2,32 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import pg from 'pg';
+import { decodeRow, evaluate, referencedNames, toColumnValue } from './migration-backfill.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.join(scriptDir, 'migrations');
 const dataFile = path.join(scriptDir, 'data.sql');
-const upkeepFile = path.join(scriptDir, 'platform-upkeep.sql');
+const helpersFile = path.join(scriptDir, 'migration-helpers.sql');
+
+const PACKAGE_SHAPE = 3;
+const SHAPE_CONVERSIONS = ["convert-unstamped.sql","convert-shape-1.sql","convert-shape-2.sql"];
+const MIGRATIONS_TABLE = 'schema_migrations';
+const SHAPE_TABLE = 'schema_shape';
+const LAYOUT_SCHEMA = '_migration_layout';
+const BACKUP_PREFIX = '$OLD_';
+const BATCH_SIZE = 1000;
+const MIGRATION_LOCK = 'lightscale-migrate';
+const REPORTED_DIFFERENCES = 30;
+const NULL_ADMISSION = 'null admission of column ';
+const RAW_TYPE_IDS = [20, 1082, 1700];
+const RAW_ARRAY_TYPE_IDS = [1016, 1182, 1231];
+
+for (const typeId of RAW_TYPE_IDS) {
+  pg.types.setTypeParser(typeId, function (value) { return value; });
+}
+for (const typeId of RAW_ARRAY_TYPE_IDS) {
+  pg.types.setTypeParser(typeId, pg.types.getTypeParser(1009));
+}
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) {
@@ -22,396 +43,8 @@ function loadDatabaseUrl() {
   throw new Error('DATABASE_URL is not set');
 }
 
-function asString(value) {
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  return '';
-}
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function asInteger(value) {
-  return typeof value === 'number' ? Math.trunc(value) : 0;
-}
-
-function identityOf(value) {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return typeof value + ':' + String(value);
-  }
-  if (value !== null && typeof value === 'object' && !Array.isArray(value) && typeof value.id === 'string') {
-    return 'id:' + value.id;
-  }
-  return 'value:' + JSON.stringify(value);
-}
-
-function distinct(values) {
-  const seen = new Set();
-  const result = [];
-  for (const value of values) {
-    const key = identityOf(value);
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push(value);
-    }
-  }
-  return result;
-}
-
-function applyMethod(op, value, args) {
-  switch (op) {
-    case 'before': {
-      const text = asString(value);
-      const index = text.indexOf(asString(args[0]));
-      return index < 0 ? text : text.slice(0, index);
-    }
-    case 'after': {
-      const text = asString(value);
-      const separator = asString(args[0]);
-      const index = text.indexOf(separator);
-      return index < 0 ? '' : text.slice(index + separator.length);
-    }
-    case 'substring':
-      return asString(value).slice(asInteger(args[0]), asInteger(args[0]) + asInteger(args[1]));
-    case 'lowercase':
-      return asString(value).toLowerCase();
-    case 'uppercase':
-      return asString(value).toUpperCase();
-    case 'split': {
-      const text = asString(value);
-      return text === '' ? [] : text.split(asString(args[0]));
-    }
-    case 'join':
-      return asArray(value).map(function (element) { return asString(element); }).join(asString(args[0]));
-    case 'length':
-      return typeof value === 'string' ? value.length : asArray(value).length;
-    case 'take':
-      return asArray(value).slice(0, asInteger(args[0]));
-    case 'drop':
-      return asArray(value).slice(asInteger(args[0]));
-    case 'slice':
-      return asArray(value).slice(asInteger(args[0]), asInteger(args[0]) + asInteger(args[1]));
-    case 'reverse':
-      return asArray(value).slice().reverse();
-    case 'distinct':
-      return distinct(asArray(value));
-    default:
-      throw new Error('Unknown migration method: ' + op);
-  }
-}
-
-function requireNumber(value) {
-  if (typeof value === 'number') {
-    return value;
-  }
-  throw new Error('Numeric operand expected');
-}
-
-function isUnset(value) {
-  return value === null || value === undefined || value === '';
-}
-
-function compareKeys(left, right) {
-  if (typeof left === 'number' && typeof right === 'number') {
-    return left - right;
-  }
-  if (typeof left === 'boolean' && typeof right === 'boolean') {
-    return Number(left) - Number(right);
-  }
-  const leftText = String(left);
-  const rightText = String(right);
-  if (leftText < rightText) {
-    return -1;
-  }
-  return leftText > rightText ? 1 : 0;
-}
-
-function compareIdentity(left, right) {
-  if (typeof left === 'object' || typeof right === 'object') {
-    return compareKeys(identityOf(left), identityOf(right));
-  }
-  return compareKeys(left, right);
-}
-
-function compareKeyed(left, right, descending) {
-  const leftUnset = isUnset(left.key);
-  const rightUnset = isUnset(right.key);
-  if (leftUnset !== rightUnset) {
-    return leftUnset ? 1 : -1;
-  }
-  const byKey = leftUnset ? 0 : compareKeys(left.key, right.key);
-  if (byKey !== 0) {
-    return descending ? -byKey : byKey;
-  }
-  return compareIdentity(left.element, right.element);
-}
-
-function orderByKey(entries, descending) {
-  return entries
-    .slice()
-    .sort(function (left, right) { return compareKeyed(left, right, descending); })
-    .map(function (entry) { return entry.element; });
-}
-
-function extendScope(scope, name, value) {
-  const next = Object.assign({}, scope);
-  next[name] = value;
-  return next;
-}
-
-function applyConvert(target, operand) {
-  switch (target) {
-    case 'integer':
-      return Math.trunc(requireNumber(operand));
-    case 'decimal':
-      return requireNumber(operand);
-    case 'string':
-      if (typeof operand === 'string') {
-        return operand;
-      }
-      if (typeof operand === 'number' || typeof operand === 'boolean') {
-        return String(operand);
-      }
-      return '';
-    default:
-      throw new Error('Unknown convert target: ' + target);
-  }
-}
-
-function applyBinary(op, left, right) {
-  switch (op) {
-    case 'and':
-      return Boolean(left) && Boolean(right);
-    case 'or':
-      return Boolean(left) || Boolean(right);
-    case '==':
-      return left === right;
-    case '!=':
-      return left !== right;
-    case '<':
-      return requireNumber(left) < requireNumber(right);
-    case '<=':
-      return requireNumber(left) <= requireNumber(right);
-    case '>':
-      return requireNumber(left) > requireNumber(right);
-    case '>=':
-      return requireNumber(left) >= requireNumber(right);
-    case '+':
-      if (typeof left === 'string' && typeof right === 'string') {
-        return left + right;
-      }
-      return requireNumber(left) + requireNumber(right);
-    case '-':
-      return requireNumber(left) - requireNumber(right);
-    case '*':
-      return requireNumber(left) * requireNumber(right);
-    case '/': {
-      const divisor = requireNumber(right);
-      if (divisor === 0) {
-        throw new Error('Division by zero');
-      }
-      return requireNumber(left) / divisor;
-    }
-    case 'modulo': {
-      const divisor = requireNumber(right);
-      if (divisor === 0) {
-        throw new Error('Modulo by zero');
-      }
-      return requireNumber(left) % divisor;
-    }
-    default:
-      throw new Error('Unsupported migration operator: ' + op);
-  }
-}
-
-function evaluate(expr, row, scope) {
-  switch (expr.kind) {
-    case 'ref':
-      if (expr.name in scope) {
-        return scope[expr.name] === undefined ? null : scope[expr.name];
-      }
-      return row[expr.name] === undefined ? null : row[expr.name];
-    case 'integer':
-    case 'decimal':
-    case 'string':
-    case 'boolean':
-      return expr.value;
-    case 'convert':
-      return applyConvert(expr.target, evaluate(expr.operand, row, scope));
-    case 'binary':
-      return applyBinary(expr.op, evaluate(expr.left, row, scope), evaluate(expr.right, row, scope));
-    case 'unary': {
-      const operand = evaluate(expr.operand, row, scope);
-      if (expr.op === 'not') {
-        return !operand;
-      }
-      if (expr.op === '-') {
-        return -requireNumber(operand);
-      }
-      return requireNumber(operand);
-    }
-    case 'conditional':
-      return evaluate(expr.condition, row, scope)
-        ? evaluate(expr.then, row, scope)
-        : evaluate(expr.else, row, scope);
-    case 'method':
-      return applyMethod(
-        expr.op,
-        evaluate(expr.value, row, scope),
-        expr.arguments.map(function (argument) { return evaluate(argument, row, scope); })
-      );
-    case 'field': {
-      const object = evaluate(expr.object, row, scope);
-      if (object === null || typeof object !== 'object') {
-        throw new Error(
-          `Migration transform cannot read '${expr.field}': the value it reads from is an id or a scalar, not a record`
-        );
-      }
-      return object[expr.field] === undefined ? null : object[expr.field];
-    }
-    case 'record': {
-      const result = {};
-      for (const name of Object.keys(expr.fields)) {
-        result[name] = evaluate(expr.fields[name], row, scope);
-      }
-      return result;
-    }
-    case 'map': {
-      let elements = asArray(evaluate(expr.source, row, scope));
-      if (expr.predicate !== null) {
-        elements = elements.filter(function (element) {
-          return evaluate(expr.predicate, row, extendScope(scope, expr.variable, element));
-        });
-      }
-      if (expr.order !== null) {
-        const keyed = elements.map(function (element) {
-          return { element: element, key: evaluate(expr.order.key, row, extendScope(scope, expr.variable, element)) };
-        });
-        elements = orderByKey(keyed, expr.order.descending);
-      }
-      return elements.map(function (element) {
-        return evaluate(expr.body, row, extendScope(scope, expr.variable, element));
-      });
-    }
-    case 'group': {
-      let elements = asArray(evaluate(expr.source, row, scope));
-      if (expr.predicate !== null) {
-        elements = elements.filter(function (element) {
-          return evaluate(expr.predicate, row, extendScope(scope, expr.variable, element));
-        });
-      }
-      const groups = new Map();
-      for (const element of elements) {
-        const key = evaluate(expr.key, row, extendScope(scope, expr.variable, element));
-        const id = identityOf(key);
-        const group = groups.get(id);
-        if (group === undefined) {
-          groups.set(id, { key: key, items: [element] });
-        } else {
-          group.items.push(element);
-        }
-      }
-      return Array.from(groups.values());
-    }
-    case 'flatten': {
-      const source = asArray(evaluate(expr.source, row, scope));
-      const result = [];
-      for (const inner of source) {
-        for (const element of asArray(inner)) {
-          result.push(element);
-        }
-      }
-      return result;
-    }
-    case 'zip': {
-      const first = asArray(evaluate(expr.first, row, scope));
-      const second = asArray(evaluate(expr.second, row, scope));
-      const result = [];
-      const length = Math.min(first.length, second.length);
-      for (let index = 0; index < length; index++) {
-        result.push({ first: first[index], second: second[index] });
-      }
-      return result;
-    }
-    case 'concat':
-      return asArray(evaluate(expr.first, row, scope)).concat(asArray(evaluate(expr.second, row, scope)));
-    default:
-      throw new Error('Unsupported migration expression: ' + String(expr.kind));
-  }
-}
-
-function toColumnValue(value) {
-  if (Array.isArray(value)) {
-    return value;
-  }
-  if (value !== null && typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-  return value;
-}
-
 function quoteIdentifier(name) {
   return '"' + name.replace(/"/g, '""') + '"';
-}
-
-const DATE_TYPE_ID = 1082;
-const NUMERIC_TYPE_IDS = new Set([20, 1700]);
-
-function pad(value) {
-  return value < 10 ? '0' + value : String(value);
-}
-
-function toDateOnly(date) {
-  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
-}
-
-function decodeCell(dataTypeId, raw) {
-  if (raw instanceof Date) {
-    return dataTypeId === DATE_TYPE_ID ? toDateOnly(raw) : raw.toISOString();
-  }
-  if (typeof raw === 'string' && NUMERIC_TYPE_IDS.has(dataTypeId)) {
-    return Number(raw);
-  }
-  return raw;
-}
-
-function decodeRow(fields, raw) {
-  const decoded = {};
-  for (const field of fields) {
-    decoded[field.name] = decodeCell(field.dataTypeID, raw[field.name]);
-  }
-  return decoded;
-}
-
-async function applyBackfill(client, entries) {
-  const byTable = new Map();
-  for (const entry of entries) {
-    const list = byTable.get(entry.table) || [];
-    list.push(entry);
-    byTable.set(entry.table, list);
-  }
-  for (const [table, list] of byTable) {
-    const result = await client.query('SELECT * FROM ' + quoteIdentifier(table));
-    for (const raw of result.rows) {
-      const row = decodeRow(result.fields, raw);
-      const assignments = [];
-      const values = [];
-      for (const entry of list) {
-        values.push(toColumnValue(evaluate(entry.expression, row, {})));
-        assignments.push(quoteIdentifier(entry.column) + ' = $' + values.length);
-      }
-      values.push(row.id);
-      await client.query(
-        'UPDATE ' + quoteIdentifier(table) + ' SET ' + assignments.join(', ') + ' WHERE "id" = $' + values.length,
-        values
-      );
-    }
-  }
 }
 
 function readMigrationFile(version, name) {
@@ -423,14 +56,6 @@ function packageVersions() {
     .filter(function (entry) { return entry.isDirectory(); })
     .map(function (entry) { return entry.name; })
     .sort();
-}
-
-async function appliedVersions(client) {
-  await client.query(
-    'CREATE TABLE IF NOT EXISTS schema_migrations ("version" text PRIMARY KEY, "appliedAt" timestamptz NOT NULL)'
-  );
-  const result = await client.query('SELECT version FROM schema_migrations ORDER BY version');
-  return result.rows.map(function (entry) { return entry.version; });
 }
 
 function versionNumber(version) {
@@ -460,58 +85,11 @@ function packageVersionAt(versions, number) {
   return version;
 }
 
-function requireKnownVersions(applied, versions) {
-  const appliedNumber = highestVersion(applied);
+function requireKnownVersions(appliedNumber, versions) {
   if (appliedNumber > highestVersion(versions)) {
     throw new Error(
       'The database is at release ' + appliedNumber + ', which is newer than this package. ' +
       'Apply that release or a later one.'
-    );
-  }
-}
-
-async function liveLayout(client) {
-  const result = await client.query(
-    'SELECT table_name, column_name, udt_name FROM information_schema.columns WHERE table_schema = current_schema()'
-  );
-  const layout = {};
-  for (const row of result.rows) {
-    const columns = layout[row.table_name] || {};
-    columns[row.column_name] = row.udt_name;
-    layout[row.table_name] = columns;
-  }
-  return layout;
-}
-
-function layoutDifferences(expected, live) {
-  const differences = [];
-  for (const table of Object.keys(expected)) {
-    const liveColumns = live[table];
-    if (liveColumns === undefined) {
-      differences.push('table "' + table + '" is missing');
-    } else {
-      for (const column of Object.keys(expected[table])) {
-        const expectedType = expected[table][column];
-        const liveType = liveColumns[column];
-        if (liveType === undefined) {
-          differences.push('column "' + table + '"."' + column + '" is missing');
-        } else if (liveType !== expectedType) {
-          differences.push('column "' + table + '"."' + column + '" is ' + liveType + ', expected ' + expectedType);
-        }
-      }
-    }
-  }
-  return differences;
-}
-
-async function verifyLayout(client, version) {
-  const expected = JSON.parse(readMigrationFile(version, 'schema.json'));
-  const differences = layoutDifferences(expected, await liveLayout(client));
-  if (differences.length > 0) {
-    throw new Error(
-      'The database does not match migration ' + version + ':\n  ' + differences.join('\n  ') + '\n' +
-      'It was not set up from this release chain, or its schema was changed by hand, so no migration can be applied to it. ' +
-      'Restore a database that matches, or set up a fresh one.'
     );
   }
 }
@@ -522,62 +100,378 @@ async function applySql(client, sql) {
   }
 }
 
+async function useSchema(client, schema) {
+  await client.query('SET LOCAL search_path TO ' + quoteIdentifier(schema));
+}
+
+async function appliedVersions(client) {
+  await client.query(
+    'CREATE TABLE IF NOT EXISTS ' + MIGRATIONS_TABLE + ' ("version" text PRIMARY KEY, "appliedAt" timestamptz NOT NULL)'
+  );
+  const result = await client.query('SELECT version FROM ' + MIGRATIONS_TABLE + ' ORDER BY version');
+  return result.rows.map(function (entry) { return entry.version; });
+}
+
+async function recordedShape(client) {
+  await client.query('CREATE TABLE IF NOT EXISTS ' + SHAPE_TABLE + ' ("shape" integer NOT NULL)');
+  const result = await client.query('SELECT shape FROM ' + SHAPE_TABLE);
+  if (result.rows.length > 1) {
+    throw new Error('The table ' + SHAPE_TABLE + ' holds more than one layout version');
+  }
+  return result.rows.length === 0 ? null : result.rows[0].shape;
+}
+
+function requireKnownShape(shape) {
+  if (shape !== null && shape > PACKAGE_SHAPE) {
+    throw new Error(
+      'The database records layout version ' + shape + ', but this package writes layout version ' + PACKAGE_SHAPE + '. ' +
+      'Apply a package of that layout version or a later one. The database was not changed.'
+    );
+  }
+}
+
+function pendingConversions(shape) {
+  return SHAPE_CONVERSIONS.slice(shape === null ? 0 : shape);
+}
+
+async function stampShape(client) {
+  await client.query('DELETE FROM ' + SHAPE_TABLE);
+  await client.query('INSERT INTO ' + SHAPE_TABLE + ' ("shape") VALUES ($1)', [PACKAGE_SHAPE]);
+}
+
+async function tableColumnTypes(client, table) {
+  const result = await client.query(
+    "SELECT attname AS name, format_type(atttypid, atttypmod) AS type FROM pg_attribute WHERE attrelid = to_regclass(format('%I', $1::text)) AND attnum > 0 AND NOT attisdropped",
+    [table]
+  );
+  const types = new Map();
+  for (const row of result.rows) {
+    types.set(row.name, row.type);
+  }
+  return types;
+}
+
+function evaluateRow(table, entries, types, row) {
+  const update = { id: row.id };
+  for (const entry of entries) {
+    try {
+      update[entry.column] = toColumnValue(evaluate(entry.expression, row, {}), types.get(entry.column));
+    } catch (error) {
+      throw new Error('Migration backfill of "' + table + '"."' + entry.column + '" failed for row ' + row.id + ': ' + error.message);
+    }
+  }
+  return update;
+}
+
+async function backfillTable(client, table, entries) {
+  const types = await tableColumnTypes(client, table);
+  for (const entry of entries) {
+    if (!types.has(entry.column)) {
+      throw new Error('Migration backfill targets the missing column "' + table + '"."' + entry.column + '"');
+    }
+  }
+  const sources = referencedNames(entries.map(function (entry) { return entry.expression; }))
+    .filter(function (name) { return types.has(name) && name !== 'id'; });
+  const selection = ['id'].concat(sources).map(quoteIdentifier).join(', ');
+  const targets = ['"id" text'].concat(entries.map(function (entry) {
+    return quoteIdentifier(entry.column) + ' ' + types.get(entry.column);
+  })).join(', ');
+  const assignments = entries.map(function (entry) {
+    return quoteIdentifier(entry.column) + ' = source.' + quoteIdentifier(entry.column);
+  }).join(', ');
+  let after = null;
+  let full = true;
+  while (full) {
+    const result = await client.query(
+      'SELECT ' + selection + ' FROM ' + quoteIdentifier(table) + (after === null ? '' : ' WHERE "id" > $1') + ' ORDER BY "id" LIMIT ' + BATCH_SIZE,
+      after === null ? [] : [after]
+    );
+    if (result.rows.length > 0) {
+      const updates = result.rows.map(function (raw) {
+        return evaluateRow(table, entries, types, decodeRow(table, result.fields, raw));
+      });
+      await client.query(
+        'UPDATE ' + quoteIdentifier(table) + ' AS target SET ' + assignments + ' FROM json_to_recordset($1::json) AS source(' + targets + ') WHERE target."id" = source."id"',
+        [JSON.stringify(updates)]
+      );
+      after = result.rows[result.rows.length - 1].id;
+    }
+    full = result.rows.length === BATCH_SIZE;
+  }
+}
+
+async function applyBackfill(client, entries) {
+  const byTable = new Map();
+  for (const entry of entries) {
+    const list = byTable.get(entry.table) || [];
+    list.push(entry);
+    byTable.set(entry.table, list);
+  }
+  for (const [table, list] of byTable) {
+    await backfillTable(client, table, list);
+  }
+}
+
+function versionSteps(version) {
+  const steps = readdirSync(path.join(migrationsDir, version), { withFileTypes: true })
+    .filter(function (entry) { return entry.isDirectory() && entry.name.startsWith('step-'); })
+    .map(function (entry) { return entry.name; })
+    .sort();
+  if (steps.length === 0) {
+    throw new Error('Migration ' + version + ' has no steps');
+  }
+  return steps;
+}
+
+function reconciliation(version) {
+  const file = path.join(migrationsDir, version, 'reconcile.sql');
+  return existsSync(file) ? readFileSync(file, 'utf-8') : '';
+}
+
+function lastStepUpkeep(version) {
+  const steps = versionSteps(version);
+  return readMigrationFile(version, path.join(steps[steps.length - 1], 'upkeep.sql'));
+}
+
+async function replayStep(client, version, step) {
+  const backfill = JSON.parse(readMigrationFile(version, path.join(step, 'backfill.json')));
+  await applySql(client, readMigrationFile(version, path.join(step, 'up.sql')));
+  await applyBackfill(client, backfill.assignments);
+  await applySql(client, readMigrationFile(version, path.join(step, 'finalize.sql')));
+  await applySql(client, readMigrationFile(version, path.join(step, 'upkeep.sql')));
+}
+
+async function replayVersion(client, version) {
+  for (const step of versionSteps(version)) {
+    await replayStep(client, version, step);
+  }
+}
+
 async function applyVersion(client, version) {
   console.log('Applying migration ' + version);
-  await applySql(client, readMigrationFile(version, 'up.sql'));
-  await applyBackfill(client, JSON.parse(readMigrationFile(version, 'backfill.json')));
-  await applySql(client, readMigrationFile(version, 'finalize.sql'));
-  await client.query('INSERT INTO schema_migrations ("version", "appliedAt") VALUES ($1, $2)', [
+  await replayVersion(client, version);
+  await client.query('INSERT INTO ' + MIGRATIONS_TABLE + ' ("version", "appliedAt") VALUES ($1, $2)', [
     version,
     new Date().toISOString(),
   ]);
 }
 
-async function loadInitialData(client) {
-  if (existsSync(dataFile)) {
-    console.log('Loading data.sql');
-    await applySql(client, readFileSync(dataFile, 'utf-8'));
+async function replayLayout(client, versions) {
+  await useSchema(client, LAYOUT_SCHEMA);
+  for (const version of versions) {
+    await replayVersion(client, version);
   }
 }
 
-async function applyPending(client, versions, applied, pending) {
-  await client.query('BEGIN');
-  try {
+function isBackup(name) {
+  return name.startsWith(BACKUP_PREFIX);
+}
+
+function touchesBackup(columns) {
+  return columns.some(isBackup);
+}
+
+function addEntry(catalog, table, entry) {
+  const entries = catalog.get(table) || [];
+  entries.push(entry);
+  catalog.set(table, entries);
+}
+
+async function catalogOf(client, schema) {
+  await useSchema(client, schema);
+  const namespace = '(SELECT oid FROM pg_namespace WHERE nspname = $1)';
+  const columns = await client.query(
+    'SELECT relation.relname AS table, attribute.attname AS name, format_type(attribute.atttypid, attribute.atttypmod) AS type, attribute.attnotnull AS required, ' +
+    'pg_get_expr(definition.adbin, definition.adrelid) AS fallback, attribute.attidentity::text AS identity, attribute.attgenerated::text AS generated ' +
+    'FROM pg_attribute attribute JOIN pg_class relation ON relation.oid = attribute.attrelid ' +
+    'LEFT JOIN pg_attrdef definition ON definition.adrelid = attribute.attrelid AND definition.adnum = attribute.attnum ' +
+    "WHERE relation.relnamespace = " + namespace + " AND relation.relkind IN ('r', 'p') AND attribute.attnum > 0 AND NOT attribute.attisdropped",
+    [schema]
+  );
+  const constraints = await client.query(
+    'SELECT relation.relname AS table, entry.contype::text AS kind, pg_get_constraintdef(entry.oid) AS definition, ' +
+    'ARRAY(SELECT attname::text FROM pg_attribute WHERE attrelid = entry.conrelid AND attnum = ANY (entry.conkey)) AS columns ' +
+    'FROM pg_constraint entry JOIN pg_class relation ON relation.oid = entry.conrelid ' +
+    "WHERE relation.relnamespace = " + namespace + " AND entry.contype <> 'n'",
+    [schema]
+  );
+  const indexes = await client.query(
+    "SELECT relation.relname AS table, replace(pg_get_indexdef(entry.indexrelid), ' ON ' || quote_ident($1::text) || '.', ' ON ') AS definition, " +
+    'ARRAY(SELECT attname::text FROM pg_attribute WHERE attrelid = entry.indrelid AND attnum = ANY (entry.indkey::smallint[])) AS columns ' +
+    'FROM pg_index entry JOIN pg_class relation ON relation.oid = entry.indrelid ' +
+    'WHERE relation.relnamespace = ' + namespace,
+    [schema]
+  );
+  const parentKeys = new Set();
+  for (const row of constraints.rows) {
+    if (row.kind === 'f') {
+      for (const column of row.columns) {
+        parentKeys.add(row.table + '.' + column);
+      }
+    }
+  }
+  const catalog = new Map();
+  for (const row of columns.rows) {
+    if (!isBackup(row.name)) {
+      addEntry(catalog, row.table, 'column ' + quoteIdentifier(row.name) + ' ' + row.type +
+        (row.fallback === null ? '' : ' DEFAULT ' + row.fallback) +
+        (row.identity === '' ? '' : ' IDENTITY ' + row.identity) +
+        (row.generated === '' ? '' : ' GENERATED ' + row.generated));
+      if (!row.required && !parentKeys.has(row.table + '.' + row.name)) {
+        addEntry(catalog, row.table, NULL_ADMISSION + quoteIdentifier(row.name));
+      }
+    }
+  }
+  for (const row of constraints.rows) {
+    if (!touchesBackup(row.columns)) {
+      addEntry(catalog, row.table, 'constraint ' + row.definition.replace(/ NOT VALID$/, ''));
+    }
+  }
+  for (const row of indexes.rows) {
+    if (!touchesBackup(row.columns)) {
+      addEntry(catalog, row.table, 'index ' + row.definition);
+    }
+  }
+  return catalog;
+}
+
+function isComparedTable(table) {
+  return !isBackup(table) && table !== MIGRATIONS_TABLE && table !== SHAPE_TABLE;
+}
+
+function countEntries(entries) {
+  const counts = new Map();
+  for (const entry of entries) {
+    counts.set(entry, (counts.get(entry) || 0) + 1);
+  }
+  return counts;
+}
+
+function entryDifferences(table, expected, live) {
+  const differences = [];
+  const liveCounts = countEntries(live);
+  const expectedCounts = countEntries(expected);
+  for (const [entry, count] of expectedCounts) {
+    if ((liveCounts.get(entry) || 0) < count) {
+      differences.push('"' + table + '" lacks ' + entry);
+    }
+  }
+  for (const [entry, count] of liveCounts) {
+    if ((expectedCounts.get(entry) || 0) < count) {
+      differences.push('"' + table + '" has an unexpected ' + entry);
+    }
+  }
+  return differences;
+}
+
+function layoutDifferences(required, expected, live) {
+  const differences = [];
+  for (const table of required) {
+    if (!live.has(table)) {
+      differences.push('table "' + table + '" is missing');
+    }
+  }
+  for (const [table, entries] of expected) {
+    if (isComparedTable(table) && live.has(table)) {
+      differences.push(...entryDifferences(table, entries, live.get(table)));
+    }
+  }
+  return differences;
+}
+
+async function verifyLayout(client, schema, version, stamped) {
+  const required = Object.keys(JSON.parse(readMigrationFile(version, 'schema.json')));
+  const expected = await catalogOf(client, LAYOUT_SCHEMA);
+  const live = await catalogOf(client, schema);
+  await useSchema(client, schema);
+  const differences = layoutDifferences(required, expected, live);
+  if (differences.length > 0) {
+    const origin = stamped
+      ? 'It was changed by hand or set up from a different release chain'
+      : 'It records no layout version, so a package generated before layout versions were recorded set it up, or it was changed by hand';
+    throw new Error(
+      'The database does not match migration ' + version + ' of this package:\n  ' +
+      differences.slice(0, REPORTED_DIFFERENCES).join('\n  ') +
+      (differences.length > REPORTED_DIFFERENCES ? '\n  ... and ' + (differences.length - REPORTED_DIFFERENCES) + ' more' : '') + '\n' +
+      origin + '. No migration is applied to it, and the database was not changed. ' +
+      'See "When migrate refuses the database" in SELF-HOSTING.md.'
+    );
+  }
+}
+
+async function loadInitialData(client, applied) {
+  if (!existsSync(dataFile)) {
+    return;
+  }
+  if (applied.length === 0) {
+    console.log('Loading data.sql');
+    await applySql(client, readFileSync(dataFile, 'utf-8'));
+  } else {
+    console.log('Skipping data.sql: The database already holds data, and data.sql is only loaded into a new database.');
+  }
+}
+
+async function currentSchema(client) {
+  const result = await client.query('SELECT current_schema() AS name');
+  return result.rows[0].name;
+}
+
+async function migrate(client) {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [MIGRATION_LOCK]);
+  const schema = await currentSchema(client);
+  await applySql(client, readFileSync(helpersFile, 'utf-8'));
+  const versions = packageVersions();
+  const applied = await appliedVersions(client);
+  const appliedNumber = highestVersion(applied);
+  requireKnownVersions(appliedNumber, versions);
+  const shape = await recordedShape(client);
+  requireKnownShape(shape);
+  const history = versions.filter(function (version) { return versionNumber(version) <= appliedNumber; });
+  const pending = versions.filter(function (version) { return versionNumber(version) > appliedNumber; });
+  await client.query('CREATE SCHEMA ' + quoteIdentifier(LAYOUT_SCHEMA));
+  if (appliedNumber > 0) {
+    const current = packageVersionAt(versions, appliedNumber);
+    await replayLayout(client, history);
+    await useSchema(client, schema);
+    for (const conversion of pendingConversions(shape)) {
+      await applySql(client, readMigrationFile(current, conversion));
+    }
+    await applySql(client, lastStepUpkeep(current));
+    await applySql(client, reconciliation(current));
+    await verifyLayout(client, schema, current, shape !== null);
+  }
+  if (pending.length > 0) {
+    await useSchema(client, schema);
     for (const version of pending) {
       await applyVersion(client, version);
     }
-    if (applied.length === 0) {
-      await loadInitialData(client);
-    }
-    await applySql(client, readFileSync(upkeepFile, 'utf-8'));
-    await verifyLayout(client, versions[versions.length - 1]);
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
+    await loadInitialData(client, applied);
+    await replayLayout(client, pending);
+    await verifyLayout(client, schema, versions[versions.length - 1], true);
   }
+  await client.query('DROP SCHEMA ' + quoteIdentifier(LAYOUT_SCHEMA) + ' CASCADE');
+  await useSchema(client, schema);
+  await stampShape(client);
+  return pending.length;
 }
 
 async function run() {
   const client = new pg.Client({ connectionString: loadDatabaseUrl() });
   await client.connect();
   try {
-    const versions = packageVersions();
-    const applied = await appliedVersions(client);
-    requireKnownVersions(applied, versions);
-    const appliedNumber = highestVersion(applied);
-    if (appliedNumber > 0) {
-      await verifyLayout(client, packageVersionAt(versions, appliedNumber));
-    }
-    const pending = versions.filter(function (version) { return versionNumber(version) > appliedNumber; });
-    await applyPending(client, versions, applied, pending);
-    console.log(pending.length === 0 ? 'Database already up to date.' : 'Applied ' + pending.length + ' migration(s).');
+    await client.query('BEGIN');
+    const applied = await migrate(client);
+    await client.query('COMMIT');
+    console.log(applied === 0 ? 'Database already up to date.' : 'Applied ' + applied + ' migration(s).');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
   } finally {
     await client.end();
   }
 }
 
 run().catch(function (error) {
-  console.error(error);
+  console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 });

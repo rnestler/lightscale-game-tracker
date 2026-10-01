@@ -3,9 +3,9 @@ import type * as $Domain from '../types/domain';
 import { matchesApi } from '../api/matchesApi';
 import { getErrorMessage } from '../utils/errorHandling';
 import { useAuth } from './useAuth';
-import { referenceStore } from '../api/referenceStore';
-import { DEFAULT_PAGE_SIZE } from '../api/pagination';
-import type { QuerySort } from '../api/pagination';
+import { referenceStore, sameIds } from '../api/referenceStore';
+import { DEFAULT_PAGE_SIZE, readRows } from '../api/pagination';
+import type { QuerySort, RowPage } from '../api/pagination';
 
 interface UseMatchesReturn {
   matches: $Domain.Match[];
@@ -56,9 +56,91 @@ interface LoadedPage {
 }
 
 const loadedPages = new Map<string, LoadedPage>();
+const pendingPages = new Map<string, Promise<LoadedPage>>();
+let pageGeneration = 0;
+let pageRevision = 0;
 
 function pageKey(paged: boolean, pageSize: number, sortKey: string): string {
   return paged ? `${pageSize}:${sortKey}` : 'all';
+}
+
+function clearPages(): void {
+  loadedPages.clear();
+  pendingPages.clear();
+  pageGeneration += 1;
+}
+
+async function queryIds(
+  limit: number,
+  cursor: string | undefined,
+  sort: QuerySort[]
+): Promise<RowPage<string>> {
+  const page = await matchesApi.query({ limit, sort, filter: { search: '', fields: [] }, cursor });
+  return { rows: page.ids, nextCursor: page.nextCursor ?? null, total: page.total };
+}
+
+async function readPage(paged: boolean, rows: number, sort: QuerySort[]): Promise<LoadedPage> {
+  const requested = referenceStore.revision();
+  if (paged) {
+    const page = await readRows(rows, null, (limit, cursor) => queryIds(limit, cursor, sort));
+    if (page.rows.length > 0) {
+      const records = await matchesApi.multiGet(page.rows);
+      if (requested === referenceStore.revision()) {
+        for (const record of records) {
+          referenceStore.set('Match', record);
+        }
+      }
+    }
+    return { ids: page.rows, nextCursor: page.nextCursor, total: page.total ?? page.rows.length };
+  }
+  const loadedIds = await matchesApi.list();
+  if (loadedIds.length > 0) {
+    const records = await matchesApi.multiGet(loadedIds);
+    if (requested === referenceStore.revision()) {
+      for (const record of records) {
+        referenceStore.set('Match', record);
+      }
+    }
+  }
+  return { ids: loadedIds, nextCursor: null, total: loadedIds.length };
+}
+
+async function trackPage(
+  key: string,
+  generation: number,
+  load: Promise<LoadedPage>
+): Promise<LoadedPage> {
+  try {
+    const page = await load;
+    if (generation === pageGeneration) {
+      loadedPages.set(key, page);
+    }
+    return page;
+  } finally {
+    if (generation === pageGeneration) {
+      pendingPages.delete(key);
+    }
+  }
+}
+
+function loadPage(
+  paged: boolean,
+  pageSize: number,
+  sortKey: string,
+  sort: QuerySort[]
+): Promise<LoadedPage> {
+  if (pageRevision !== referenceStore.revision()) {
+    pageRevision = referenceStore.revision();
+    clearPages();
+  }
+  const key = pageKey(paged, pageSize, sortKey);
+  const pending = pendingPages.get(key);
+  if (pending !== undefined) {
+    return pending;
+  }
+  const load = trackPage(key, pageGeneration, readPage(paged, pageSize, sort));
+  pendingPages.set(key, load);
+  return load;
 }
 
 export function useMatches(options?: UseMatchesOptions): UseMatchesReturn {
@@ -69,77 +151,65 @@ export function useMatches(options?: UseMatchesOptions): UseMatchesReturn {
   const sortDirection = options?.sortDirection ?? 'ascending';
   const sortKey = JSON.stringify(options?.sort ?? [{ field: sortField, direction: sortDirection }]);
   const sort = useMemo(() => JSON.parse(sortKey) as QuerySort[], [sortKey]);
-  const cached = loadedPages.get(pageKey(paged, pageSize, sortKey));
+  const cached =
+    pageRevision === referenceStore.revision()
+      ? loadedPages.get(pageKey(paged, pageSize, sortKey))
+      : undefined;
   const [ids, setIds] = useState<string[]>(cached?.ids ?? []);
   const [nextCursor, setNextCursor] = useState<string | null>(cached?.nextCursor ?? null);
   const [total, setTotal] = useState(cached?.total ?? 0);
-  const [isInitializing, setIsInitializing] = useState(autoLoad && cached === undefined);
+  const [hasLoaded, setHasLoaded] = useState(cached !== undefined);
+  const isInitializing = autoLoad && !hasLoaded;
   const [isBusy, setIsBusy] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { isReady } = useAuth();
   const loadedFetchRef = useRef<(() => Promise<void>) | null>(null);
-  const storeSnapshot = useSyncExternalStore(referenceStore.subscribe, referenceStore.getSnapshot);
+  const loadedRows = useRef(0);
+  const loadedAll = useRef(false);
+  const storeView = useSyncExternalStore(referenceStore.subscribe, () =>
+    referenceStore.view<$Domain.Match>('Match')
+  );
+  const revision = useSyncExternalStore(referenceStore.subscribe, referenceStore.revision);
 
   const matches = useMemo(() => {
-    const knownIds = [...ids, ...storeSnapshot.created('Match').filter((id) => !ids.includes(id))];
+    const knownIds = [...ids, ...storeView.created().filter((id) => !ids.includes(id))];
     return knownIds
-      .map((id) => storeSnapshot.get<$Domain.Match>('Match', id))
+      .map((id) => storeView.get(id))
       .filter((r): r is $Domain.Match => r !== undefined);
-  }, [ids, storeSnapshot]);
+  }, [ids, storeView]);
+
+  useEffect(() => {
+    loadedRows.current = ids.length;
+  }, [ids]);
 
   const fetchMatches = useCallback(async (): Promise<void> => {
-    if (paged) {
-      const firstPage = await matchesApi.query({
-        limit: pageSize,
-        sort,
-        filter: { search: '', fields: [] },
-      });
-      if (firstPage.ids.length > 0) {
-        const records = await matchesApi.multiGet(firstPage.ids);
-        for (const record of records) {
-          referenceStore.set('Match', record);
-        }
-      }
-      const page = {
-        ids: firstPage.ids,
-        nextCursor: firstPage.nextCursor ?? null,
-        total: firstPage.total ?? firstPage.ids.length,
-      };
-      loadedPages.set(pageKey(paged, pageSize, sortKey), page);
-      setIds(page.ids);
-      setNextCursor(page.nextCursor);
-      setTotal(page.total);
-    } else {
-      const loadedIds = await matchesApi.list();
-      if (loadedIds.length > 0) {
-        const records = await matchesApi.multiGet(loadedIds);
-        for (const record of records) {
-          referenceStore.set('Match', record);
-        }
-      }
-      loadedPages.set(pageKey(paged, pageSize, sortKey), {
-        ids: loadedIds,
-        nextCursor: null,
-        total: loadedIds.length,
-      });
-      setIds(loadedIds);
-      setNextCursor(null);
-      setTotal(loadedIds.length);
+    const requested = referenceStore.revision();
+    const rows = Math.max(pageSize, loadedRows.current);
+    const page = await loadPage(paged && !loadedAll.current, rows, sortKey, sort);
+    if (requested !== referenceStore.revision()) {
+      return;
     }
-  }, [paged, pageSize, sortKey, sort]);
+    setIds((current) => (sameIds(current, page.ids) ? current : page.ids));
+    setNextCursor(page.nextCursor);
+    setTotal(page.total);
+  }, [paged, pageSize, sortKey, sort, revision]);
 
   const reloadMatches = useCallback(async (): Promise<void> => {
     setIsBusy(true);
     setErrorMessage(null);
+    const requested = referenceStore.revision();
     try {
       await fetchMatches();
     } catch (error) {
+      if (requested !== referenceStore.revision()) {
+        return;
+      }
       setErrorMessage(getErrorMessage(error));
       throw error;
     } finally {
       setIsBusy(false);
-      setIsInitializing(false);
+      setHasLoaded(true);
     }
   }, [fetchMatches]);
 
@@ -149,23 +219,30 @@ export function useMatches(options?: UseMatchesOptions): UseMatchesReturn {
     }
     setIsLoadingMore(true);
     setErrorMessage(null);
+    loadedRows.current += pageSize;
+    const requested = referenceStore.revision();
     try {
-      const nextPage = await matchesApi.query({
-        limit: pageSize,
-        sort,
-        filter: { search: '', fields: [] },
-        cursor: nextCursor,
-      });
-      if (nextPage.ids.length > 0) {
-        const records = await matchesApi.multiGet(nextPage.ids);
-        for (const record of records) {
-          referenceStore.set('Match', record);
+      const nextPage = await readRows(pageSize, nextCursor, (limit, cursor) =>
+        queryIds(limit, cursor, sort)
+      );
+      if (nextPage.rows.length > 0) {
+        const records = await matchesApi.multiGet(nextPage.rows);
+        if (requested === referenceStore.revision()) {
+          for (const record of records) {
+            referenceStore.set('Match', record);
+          }
         }
       }
-      loadedPages.clear();
-      setIds((previous) => [...previous, ...nextPage.ids.filter((id) => !previous.includes(id))]);
-      setNextCursor(nextPage.nextCursor ?? null);
+      if (requested !== referenceStore.revision()) {
+        return;
+      }
+      clearPages();
+      setIds((previous) => [...previous, ...nextPage.rows.filter((id) => !previous.includes(id))]);
+      setNextCursor(nextPage.nextCursor);
     } catch (error) {
+      if (requested !== referenceStore.revision()) {
+        return;
+      }
       setErrorMessage(getErrorMessage(error));
     } finally {
       setIsLoadingMore(false);
@@ -173,27 +250,22 @@ export function useMatches(options?: UseMatchesOptions): UseMatchesReturn {
   }, [nextCursor, pageSize, sort]);
 
   const loadAll = useCallback(async (): Promise<void> => {
+    loadedAll.current = true;
     setIsBusy(true);
     setErrorMessage(null);
+    const requested = referenceStore.revision();
     try {
-      const loadedIds = await matchesApi.list();
-      if (loadedIds.length > 0) {
-        const records = await matchesApi.multiGet(loadedIds);
-        for (const record of records) {
-          referenceStore.set('Match', record);
-        }
-      }
-      loadedPages.clear();
-      setIds(loadedIds);
-      setNextCursor(null);
-      setTotal(loadedIds.length);
+      await fetchMatches();
     } catch (error) {
+      if (requested !== referenceStore.revision()) {
+        return;
+      }
       setErrorMessage(getErrorMessage(error));
     } finally {
       setIsBusy(false);
-      setIsInitializing(false);
+      setHasLoaded(true);
     }
-  }, []);
+  }, [fetchMatches]);
 
   const hasMore = nextCursor !== null;
 
@@ -208,12 +280,15 @@ export function useMatches(options?: UseMatchesOptions): UseMatchesReturn {
       return;
     }
     loadedFetchRef.current = fetchMatches;
+    const requested = referenceStore.revision();
     fetchMatches()
       .catch((error) => {
-        setErrorMessage(getErrorMessage(error));
+        if (requested === referenceStore.revision()) {
+          setErrorMessage(getErrorMessage(error));
+        }
       })
       .finally(() => {
-        setIsInitializing(false);
+        setHasLoaded(true);
       });
   }, [autoLoad, isReady, fetchMatches]);
 
@@ -232,7 +307,7 @@ export function useMatches(options?: UseMatchesOptions): UseMatchesReturn {
         const createdMatch = await matchesApi.create(input);
         const storedMatch = referenceStore.set('Match', createdMatch);
         referenceStore.register('Match', storedMatch.id);
-        loadedPages.clear();
+        clearPages();
         setTotal((previous) => previous + 1);
         return storedMatch;
       } finally {
@@ -269,7 +344,7 @@ export function useMatches(options?: UseMatchesOptions): UseMatchesReturn {
     try {
       await matchesApi.delete(id);
       referenceStore.delete('Match', id);
-      loadedPages.clear();
+      clearPages();
       setIds((previous) => previous.filter((i) => i !== id));
       setTotal((previous) => (previous > 0 ? previous - 1 : 0));
     } finally {

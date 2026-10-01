@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import { toast } from './toast';
 import { fieldLabel, fieldLabels, recordName, recordPlural } from './recordNames';
 
@@ -5,7 +6,7 @@ export type RequestKind = 'load' | 'save';
 
 const GATEWAY_STATUSES = new Set([502, 503, 504]);
 
-export function getErrorMessage(error: unknown, defaultMessage = 'Unknown error'): string {
+export function getErrorMessage(error: unknown, defaultMessage = i18n.chrome.unknownError): string {
   if (error instanceof Error) {
     return error.message;
   }
@@ -27,58 +28,57 @@ export function fireAndForget(action: Promise<unknown> | void): void {
   });
 }
 
-const CODE_MESSAGES: Record<string, string> = {
-  AUTHENTICATION_REQUIRED: 'Your session has ended. Please sign in again.',
-  UNAUTHORIZED: 'You are not authorized to do this.',
-  ADMIN_REQUIRED: 'This action requires an admin role.',
-  APP_ACCESS_REQUIRED: 'This action requires access to the software.',
-  ROLE_NAME_MISSING: 'A role name is required.',
-  ROLE_NOT_FOUND: 'That role does not exist.',
-  ROLE_ASSIGNMENT_NOT_FOUND: 'That role assignment does not exist.',
-  CANNOT_REMOVE_OWN_ADMIN_ROLE: 'You cannot remove your own admin role.',
-  CANNOT_DELETE_SELF: 'You cannot delete your own account.',
-  REFERENCE_CONFLICT: 'This record is still used by other records and cannot be deleted.',
-  AI_NOT_CONFIGURED:
-    'This step needs the AI service, which is not configured. Please contact your administrator.',
-  DERIVED_SORT_LIMIT: 'This list holds too many records to sort by a calculated field.',
-  EMAIL_REQUIRED: 'Enter a valid email address.',
-  USER_ALREADY_EXISTS: 'An account with this email already exists.',
-  INVITATION_EXISTS: 'An invitation for this email already exists.',
-  INVITATION_NOT_FOUND: 'This invitation no longer exists.',
-  ACCOUNT_DELETION_DISABLED: 'Account deletion is disabled.',
-  ADMIN_CANNOT_DELETE_ACCOUNT: 'Administrators cannot delete their own account.',
-  SUBMISSION_REJECTED: 'Reload the page before submitting again.',
-  SUBMISSION_TOO_EARLY: 'The form was sent too quickly. Wait a moment, then send it again.',
+const CODE_MESSAGES: Partial<Record<string, () => string>> = {
+  AUTHENTICATION_REQUIRED: (): string => i18n.chrome.errorSessionEnded,
+  UNAUTHORIZED: (): string => i18n.chrome.errorUnauthorized,
+  ADMIN_REQUIRED: (): string => i18n.chrome.errorAdminRequired,
+  APP_ACCESS_REQUIRED: (): string => i18n.chrome.errorAppAccessRequired,
+  ROLE_NAME_MISSING: (): string => i18n.chrome.errorRoleNameMissing,
+  ROLE_NOT_FOUND: (): string => i18n.chrome.errorRoleNotFound,
+  ROLE_ASSIGNMENT_NOT_FOUND: (): string => i18n.chrome.errorRoleAssignmentNotFound,
+  CANNOT_REMOVE_OWN_ADMIN_ROLE: (): string => i18n.chrome.errorCannotRemoveOwnAdminRole,
+  CANNOT_DELETE_SELF: (): string => i18n.chrome.errorCannotDeleteSelf,
+  REFERENCE_CONFLICT: (): string => i18n.chrome.errorRecordStillReferenced,
+  MIRRORED_COLLECTION: (): string => i18n.chrome.errorMirroredCollection,
+  AI_NOT_CONFIGURED: (): string => i18n.chrome.errorAiNotConfigured,
+  DERIVED_SORT_LIMIT: (): string => i18n.chrome.errorDerivedSortLimit,
+  EMAIL_REQUIRED: (): string => i18n.chrome.invalidEmail,
+  USER_ALREADY_EXISTS: (): string => i18n.chrome.authUserExists,
+  INVITATION_EXISTS: (): string => i18n.chrome.invitationExists,
+  INVITATION_NOT_FOUND: (): string => i18n.chrome.invitationNotFound,
+  ACCOUNT_DELETION_DISABLED: (): string => i18n.chrome.accountDeletionDisabled,
+  ADMIN_CANNOT_DELETE_ACCOUNT: (): string => i18n.chrome.adminCannotDeleteAccount,
+  SUBMISSION_REJECTED: (): string => i18n.chrome.submissionRejected,
+  RECENT_SIGN_IN_REQUIRED: (): string => i18n.chrome.deleteAccountSignInAgain,
 };
 
 export async function apiErrorMessage(response: Response, fallback: string): Promise<string> {
   const data = (await response.json().catch(() => ({}))) as { code?: string };
-  const known = data.code === undefined ? undefined : CODE_MESSAGES[data.code];
+  const known = data.code === undefined ? undefined : CODE_MESSAGES[data.code]?.();
   return known ?? fallback;
 }
 
-const AUTH_CODE_MESSAGES: Record<string, string> = {
-  INVALID_EMAIL_OR_PASSWORD: 'Invalid email or password.',
-  INVALID_PASSWORD: 'Invalid password. Please try again.',
-  INVALID_EMAIL: 'Enter a valid email address.',
-  USER_ALREADY_EXISTS: 'An account with this email already exists.',
-  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: 'An account with this email already exists.',
-  PASSWORD_TOO_SHORT: 'The password is too short.',
-  PASSWORD_TOO_LONG: 'The password is too long.',
-  CREDENTIAL_ACCOUNT_NOT_FOUND: 'This account signs in without a password.',
-  INVALID_TOKEN: 'This link is invalid or has expired.',
-  TOKEN_EXPIRED: 'This link is invalid or has expired.',
-  SESSION_EXPIRED: 'Your session has ended. Please sign in again.',
-  INVALID_CODE: 'Invalid verification code',
-  INVALID_BACKUP_CODE: 'Invalid verification code',
-  OTP_HAS_EXPIRED: 'The code has expired. Please request a new one.',
-  TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: 'Too many attempts. Please try again later.',
-  ACCOUNT_TEMPORARILY_LOCKED: 'Too many attempts. Please try again later.',
-  PASSKEY_NOT_FOUND: 'No passkey found. Please register a passkey first in Settings.',
-  AUTHENTICATION_FAILED: 'Passkey authentication failed',
-  PREVIOUSLY_REGISTERED: 'This passkey is already registered.',
-  SIGNUP_INVITATION_REQUIRED:
-    'Sign-up is by invitation only. Use the invitation link sent to your email.',
+const AUTH_CODE_MESSAGES: Partial<Record<string, () => string>> = {
+  INVALID_EMAIL_OR_PASSWORD: (): string => i18n.chrome.authInvalidCredentials,
+  INVALID_PASSWORD: (): string => i18n.chrome.invalidPassword,
+  INVALID_EMAIL: (): string => i18n.chrome.invalidEmail,
+  USER_ALREADY_EXISTS: (): string => i18n.chrome.authUserExists,
+  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: (): string => i18n.chrome.authUserExists,
+  PASSWORD_TOO_SHORT: (): string => i18n.chrome.authPasswordTooShort,
+  PASSWORD_TOO_LONG: (): string => i18n.chrome.authPasswordTooLong,
+  CREDENTIAL_ACCOUNT_NOT_FOUND: (): string => i18n.chrome.authNoPasswordAccount,
+  INVALID_TOKEN: (): string => i18n.chrome.authLinkExpired,
+  TOKEN_EXPIRED: (): string => i18n.chrome.authLinkExpired,
+  SESSION_EXPIRED: (): string => i18n.chrome.errorSessionEnded,
+  INVALID_CODE: (): string => i18n.chrome.invalidVerificationCode,
+  INVALID_BACKUP_CODE: (): string => i18n.chrome.invalidVerificationCode,
+  OTP_HAS_EXPIRED: (): string => i18n.chrome.authCodeExpired,
+  TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: (): string => i18n.chrome.authTooManyAttempts,
+  ACCOUNT_TEMPORARILY_LOCKED: (): string => i18n.chrome.authTooManyAttempts,
+  PASSKEY_NOT_FOUND: (): string => i18n.chrome.noPasskeyFound,
+  AUTHENTICATION_FAILED: (): string => i18n.chrome.passkeyFailed,
+  PREVIOUSLY_REGISTERED: (): string => i18n.chrome.passkeyAlreadyRegistered,
+  SIGNUP_INVITATION_REQUIRED: (): string => i18n.chrome.invitationOnlyNotice,
 };
 
 export interface AuthFailure {
@@ -88,11 +88,11 @@ export interface AuthFailure {
 }
 
 export function authErrorMessage(failure: AuthFailure, fallback: string): string {
-  const known = failure.code === undefined ? undefined : AUTH_CODE_MESSAGES[failure.code];
+  const known = failure.code === undefined ? undefined : AUTH_CODE_MESSAGES[failure.code]?.();
   if (known !== undefined) {
     return known;
   }
-  return failure.status === 429 ? 'Too many attempts. Please try again later.' : fallback;
+  return failure.status === 429 ? i18n.chrome.authTooManyAttempts : fallback;
 }
 
 export class AuthRequestError extends Error {
@@ -127,13 +127,13 @@ function permissionDeniedMessage(serverMessage: string | undefined): string {
   const pattern = /for (\w+) on ([\w.]+)/;
   const match = serverMessage === undefined ? null : pattern.exec(serverMessage);
   if (match === null) {
-    return 'You do not have permission to perform this action. Please contact your administrator.';
+    return i18n.chrome.errorPermissionDenied;
   }
   const resource = match[2];
-  return `You do not have permission for ${resource}. Please contact your administrator to request access.`;
+  return i18n.fill(i18n.chrome.errorPermissionDeniedOn, { resource });
 }
 
-type StringFormat = 'email' | 'phone' | 'url' | 'country';
+type StringFormat = 'email' | 'phone' | 'url' | 'country' | 'timezone';
 
 export type Refusal =
   | { kind: 'frozen'; type: string }
@@ -149,6 +149,7 @@ export type Refusal =
   | { kind: 'orderLineGone' }
   | { kind: 'orderEmpty' }
   | { kind: 'precondition' }
+  | { kind: 'localTime'; local: string; zone: string; reason: 'ambiguous' | 'nonexistent' }
   | { kind: 'stated'; message: string };
 
 export class ApiRequestError extends Error {
@@ -178,6 +179,7 @@ function refusalFields(refusal: Refusal): string[] {
     case 'orderLineGone':
     case 'orderEmpty':
     case 'precondition':
+    case 'localTime':
     case 'stated':
       return [];
   }
@@ -209,13 +211,15 @@ export function humanize(identifier: string): string {
 function formatMessage(format: StringFormat): string {
   switch (format) {
     case 'email':
-      return 'Enter a valid email address.';
+      return i18n.chrome.invalidEmail;
     case 'phone':
-      return 'Enter a valid phone number.';
+      return i18n.chrome.invalidPhone;
     case 'url':
-      return 'Enter a valid web address.';
+      return i18n.chrome.invalidUrl;
     case 'country':
-      return 'Select a valid country.';
+      return i18n.chrome.invalidCountry;
+    case 'timezone':
+      return i18n.chrome.invalidTimezone;
   }
 }
 
@@ -224,59 +228,60 @@ function refusalMessage(refusal: Refusal): string {
     case 'stated':
       return refusal.message;
     case 'frozen':
-      return 'This __RECORD__ can no longer be changed.'.replace(
-        '__RECORD__',
-        recordName(refusal.type)
-      );
+      return i18n.fill(i18n.chrome.refusalFrozen, { record: recordName(refusal.type) });
     case 'format':
       return formatMessage(refusal.format);
     case 'required':
-      return '__LABEL__ is required.'.replace('__LABEL__', fieldLabel(refusal.type, refusal.field));
+      return i18n.fill(i18n.chrome.fieldRequired, {
+        label: fieldLabel(refusal.type, refusal.field),
+      });
     case 'rule':
       return refusal.fields.length === 1
-        ? 'The value in __LABELS__ is not allowed here.'.replace(
-            '__LABELS__',
-            fieldLabels(refusal.type, refusal.fields)
-          )
-        : 'The values in __LABELS__ do not go together.'.replace(
-            '__LABELS__',
-            fieldLabels(refusal.type, refusal.fields)
-          );
+        ? i18n.fill(i18n.chrome.refusalRule, { labels: fieldLabels(refusal.type, refusal.fields) })
+        : i18n.fill(i18n.chrome.refusalRuleCombined, {
+            labels: fieldLabels(refusal.type, refusal.fields),
+          });
     case 'unique':
-      return '__LABELS__: this value is already taken in __RECORDS__.'
-        .replace('__RECORDS__', recordPlural(refusal.type))
-        .replace('__LABELS__', fieldLabels(refusal.type, refusal.fields));
+      return i18n.fill(i18n.chrome.refusalUnique, {
+        records: recordPlural(refusal.type),
+        labels: fieldLabels(refusal.type, refusal.fields),
+      });
     case 'exclusive':
-      return '__LABELS__: this period is already taken in __RECORDS__.'
-        .replace('__RECORDS__', recordPlural(refusal.type))
-        .replace('__LABELS__', fieldLabels(refusal.type, refusal.partition));
+      return i18n.fill(i18n.chrome.refusalExclusive, {
+        records: recordPlural(refusal.type),
+        labels: fieldLabels(refusal.type, refusal.partition),
+      });
     case 'capacity':
-      return 'The limit of __LIMIT__ __RECORD__ entries is reached.'
-        .replace('__RECORD__', recordName(refusal.type))
-        .replace('__LIMIT__', String(refusal.limit));
+      return i18n.fill(i18n.chrome.refusalCapacity, {
+        record: recordName(refusal.type),
+        limit: String(refusal.limit),
+      });
     case 'recordGone':
-      return 'This __RECORD__ no longer exists.'.replace('__RECORD__', recordName(refusal.type));
+      return i18n.fill(i18n.chrome.refusalRecordGone, { record: recordName(refusal.type) });
     case 'recordOwned':
-      return 'This __RECORD__ belongs to someone else.'.replace(
-        '__RECORD__',
-        recordName(refusal.type)
-      );
+      return i18n.fill(i18n.chrome.refusalRecordOwned, { record: recordName(refusal.type) });
     case 'referenceGone':
-      return 'The __LABEL__ this refers to no longer exists.'.replace(
-        '__LABEL__',
-        fieldLabel(refusal.type, refusal.field)
-      );
+      return i18n.fill(i18n.chrome.refusalReferenceGone, {
+        label: fieldLabel(refusal.type, refusal.field),
+      });
     case 'orderLineGone':
-      return 'An item in this order no longer exists.';
+      return i18n.chrome.refusalOrderLineGone;
     case 'orderEmpty':
-      return 'This order has no items yet.';
+      return i18n.chrome.refusalOrderEmpty;
     case 'precondition':
-      return 'This action cannot be carried out with the current values.';
+      return i18n.chrome.refusalPrecondition;
+    case 'localTime':
+      return i18n.fill(
+        refusal.reason === 'ambiguous'
+          ? i18n.chrome.ambiguousLocalTime
+          : i18n.chrome.nonexistentLocalTime,
+        { time: refusal.local.replace('T', ' '), zone: refusal.zone }
+      );
   }
 }
 
 function genericMessage(kind: RequestKind): string {
-  return kind === 'load' ? 'This could not be loaded.' : 'This could not be saved.';
+  return kind === 'load' ? i18n.chrome.loadFailedGeneric : i18n.chrome.refusalGeneric;
 }
 
 function answersJson(response: Response): boolean {
@@ -288,7 +293,7 @@ export async function apiRequestError(
   kind: RequestKind
 ): Promise<ApiRequestError> {
   if (GATEWAY_STATUSES.has(response.status) && !answersJson(response)) {
-    return new ApiRequestError('The server is not responding. Please try again.', null);
+    return new ApiRequestError(i18n.chrome.serverUnreachable, null);
   }
   let data: { error?: string; code?: string; refusal?: Refusal };
   try {
@@ -296,7 +301,7 @@ export async function apiRequestError(
   } catch {
     data = {};
   }
-  const known = data.code === undefined ? undefined : CODE_MESSAGES[data.code];
+  const known = data.code === undefined ? undefined : CODE_MESSAGES[data.code]?.();
   if (known !== undefined) {
     return new ApiRequestError(known, null);
   }

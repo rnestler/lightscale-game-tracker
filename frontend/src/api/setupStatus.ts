@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
 import { apiBaseUrl } from '../config/apiConfig';
 
+export interface Capabilities {
+  passwordReset: boolean;
+  emailVerification: boolean;
+  twoFactor: boolean;
+  passkeys: boolean;
+}
+
 export interface SetupStatus {
   emailDelivery: boolean;
   socialProviders: string[];
   addressLookup: boolean;
   mapDisplay: boolean;
+  capabilities: Capabilities;
 }
 
 export interface PlacesSetup {
@@ -13,24 +21,35 @@ export interface PlacesSetup {
   mapDisplay: boolean;
 }
 
-const FULLY_CONFIGURED: SetupStatus = {
-  emailDelivery: true,
-  socialProviders: ['google', 'apple', 'microsoft'],
-  addressLookup: true,
-  mapDisplay: true,
+const NOT_CONFIGURED: SetupStatus = {
+  emailDelivery: false,
+  socialProviders: [],
+  addressLookup: false,
+  mapDisplay: false,
+  capabilities: {
+    passwordReset: false,
+    emailVerification: false,
+    twoFactor: false,
+    passkeys: false,
+  },
 };
 
 let pendingStatus: Promise<SetupStatus> | null = null;
 
 function loadSetupStatus(): Promise<SetupStatus> {
-  pendingStatus ??= fetch(`${apiBaseUrl}/api/setup-status`).then(
-    (response) => response.json() as Promise<SetupStatus>
-  );
+  pendingStatus ??= fetch(`${apiBaseUrl}/api/setup-status`)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`Setup status answered ${response.status}`);
+      }
+      return response.json() as Promise<Partial<SetupStatus>>;
+    })
+    .then((data) => ({ ...NOT_CONFIGURED, ...data }));
   return pendingStatus;
 }
 
 export function useSetupStatus(): SetupStatus {
-  const [status, setStatus] = useState<SetupStatus>(FULLY_CONFIGURED);
+  const [status, setStatus] = useState<SetupStatus>(NOT_CONFIGURED);
 
   useEffect(() => {
     loadSetupStatus()

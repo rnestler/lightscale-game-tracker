@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { pool } from './db.js';
 import type { Queryable } from './db.js';
+import { inspectUploadedFile, UploadRefusedError } from './file-inspection.js';
 
 export interface FileBlobInput {
   data: string;
@@ -115,11 +116,27 @@ export function stageFiles(
   }
 }
 
+function refuseUnsafeUpload(blob: FileBlobInput): void {
+  if (!isWithinUploadLimit(blob.data)) {
+    throw new UploadRefusedError(
+      413,
+      'PAYLOAD_TOO_LARGE',
+      'File exceeds the maximum upload size of 25 MB'
+    );
+  }
+  const verdict = inspectUploadedFile(blob.fileName, Buffer.from(blob.data, 'base64'));
+  if (verdict.kind === 'refused') {
+    throw new UploadRefusedError(
+      415,
+      'UNSUPPORTED_MEDIA_TYPE',
+      `"${blob.fileName}": ${verdict.reason}`
+    );
+  }
+}
+
 export async function storeStagedFiles(client: Queryable, staged: StagedFile[]): Promise<void> {
   for (const { id, blob } of staged) {
-    if (!isWithinUploadLimit(blob.data)) {
-      throw new Error('File exceeds the maximum upload size of 25 MB');
-    }
+    refuseUnsafeUpload(blob);
     await client.query(
       'INSERT INTO "$FILES" ("id", "mimeType", "fileName", "data") VALUES ($1, $2, $3, $4)',
       [id, blob.mimeType, blob.fileName, blob.data]

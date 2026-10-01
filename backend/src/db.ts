@@ -18,6 +18,7 @@ type TypeOid = (typeof types.builtins)[keyof typeof types.builtins];
 
 const BIGINT_ARRAY_TYPE = 1016 as TypeOid;
 const DATE_ARRAY_TYPE = 1182 as TypeOid;
+const NUMERIC_ARRAY_TYPE = 1231 as TypeOid;
 
 function calendarDay(value: string): string {
   return value;
@@ -41,18 +42,25 @@ function integerArray(value: string): number[] {
   return elements === '' ? [] : elements.split(',').map(safeInteger);
 }
 
-types.setTypeParser(types.builtins.INT8, safeInteger);
-types.setTypeParser(BIGINT_ARRAY_TYPE, integerArray);
-types.setTypeParser(types.builtins.DATE, calendarDay);
-types.setTypeParser(DATE_ARRAY_TYPE, calendarDays);
-
-types.setTypeParser(types.builtins.NUMERIC, (value: string): number => {
+function finiteNumber(value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
     throw new Error(`NUMERIC value "${value}" is not a finite number`);
   }
   return parsed;
-});
+}
+
+function numericArray(value: string): number[] {
+  const elements = value.slice(1, -1);
+  return elements === '' ? [] : elements.split(',').map(finiteNumber);
+}
+
+types.setTypeParser(types.builtins.INT8, safeInteger);
+types.setTypeParser(BIGINT_ARRAY_TYPE, integerArray);
+types.setTypeParser(types.builtins.DATE, calendarDay);
+types.setTypeParser(DATE_ARRAY_TYPE, calendarDays);
+types.setTypeParser(types.builtins.NUMERIC, finiteNumber);
+types.setTypeParser(NUMERIC_ARRAY_TYPE, numericArray);
 
 export const pool = new Pool({
   connectionString: databaseUrl,

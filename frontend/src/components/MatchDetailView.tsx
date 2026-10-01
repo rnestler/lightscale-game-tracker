@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import type * as $Domain from '../types/domain';
 import { ChevronLeftIcon } from 'lucide-react';
@@ -10,9 +11,7 @@ interface MatchDetailViewProps {
   players?: $Domain.Player[];
   open: boolean;
   onClose: () => void;
-  embedded?: boolean;
-  bare?: boolean;
-  onBack?: () => void;
+  page?: boolean;
   onEdit?: (match: $Domain.Match) => void;
   onDelete?: (id: string) => void;
   onTransactionSuccess?: () => void;
@@ -24,65 +23,60 @@ export function MatchDetailView({
   onClose,
   onEdit,
   onDelete,
-  embedded,
-  bare,
-  onBack,
+  page,
   onTransactionSuccess,
 }: MatchDetailViewProps): JSX.Element {
   if (!match) {
     return <></>;
   }
+  const sampleMarker = match._sample ? (
+    <div className="flex justify-end pl-4 pr-14 pt-4">
+      <span className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+        {i18n.chrome.sampleRecord}
+      </span>
+    </div>
+  ) : null;
   const content = (
-    <MatchDetailBody
-      match={match}
-      onEdit={onEdit}
-      onDelete={onDelete}
-      onClose={onClose}
-      onTransactionSuccess={onTransactionSuccess}
-    />
-  );
-  const sheetContent = (
-    <MatchDetailBody
-      match={match}
-      onEdit={onEdit}
-      onDelete={onDelete}
-      onClose={onClose}
-      onTransactionSuccess={onTransactionSuccess}
-      hideClose
-    />
-  );
-  return (
     <>
-      {bare ? (
-        <div className="bg-background">{content}</div>
-      ) : embedded ? (
-        <div className="flex flex-col h-full min-h-0 bg-background">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="lg:hidden flex items-center gap-1.5 px-4 py-3 text-sm text-muted-foreground hover:text-foreground border-b border-border"
-            >
-              <ChevronLeftIcon className="h-4 w-4" />
-              <span>Back</span>
-            </button>
-          )}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">{content}</div>
-        </div>
-      ) : (
-        <Sheet
-          open={open}
-          onOpenChange={(isOpen) => {
-            if (!isOpen) {
-              onClose();
-            }
-          }}
-        >
-          <SheetContent variant="modal" aria-describedby={undefined}>
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">{sheetContent}</div>
-          </SheetContent>
-        </Sheet>
-      )}
+      {sampleMarker}
+      <MatchDetailBody
+        match={match}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onClose={onClose}
+        onTransactionSuccess={onTransactionSuccess}
+        hideClose
+      />
     </>
+  );
+  return page ? (
+    <div className="flex flex-col h-full min-h-0 gap-3">
+      <button
+        type="button"
+        onClick={onClose}
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground self-start"
+      >
+        <ChevronLeftIcon className="h-4 w-4" />
+        <span>{i18n.chrome.back}</span>
+      </button>
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <div className="rounded-xl border border-border bg-card overflow-hidden text-card-foreground">
+          {content}
+        </div>
+      </div>
+    </div>
+  ) : (
+    <Sheet
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          onClose();
+        }
+      }}
+    >
+      <SheetContent variant="modal" aria-describedby={undefined}>
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">{content}</div>
+      </SheetContent>
+    </Sheet>
   );
 }

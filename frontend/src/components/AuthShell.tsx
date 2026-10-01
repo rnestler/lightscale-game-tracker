@@ -1,3 +1,4 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
 import { AuthFrame } from './AuthFrame';
 import { Login } from './auth/Login';
@@ -5,6 +6,7 @@ import { Register } from './auth/Register';
 import { ForgotPassword } from './auth/ForgotPassword';
 import { ResetPassword } from './auth/ResetPassword';
 import { VerifyEmail } from './auth/VerifyEmail';
+import { navigateToPath, openSignIn } from '../utils/recordNavigation';
 
 export function AuthShell({
   mode,
@@ -13,35 +15,35 @@ export function AuthShell({
 }): JSX.Element {
   const title =
     mode === 'login'
-      ? 'Sign in'
+      ? i18n.chrome.signIn
       : mode === 'register'
-        ? 'Create account'
+        ? i18n.chrome.createAccount
         : mode === 'forgot'
-          ? 'Reset password'
+          ? i18n.chrome.forgotPasswordTitle
           : mode === 'verify'
-            ? 'Verify your email'
-            : 'Set a new password';
+            ? i18n.chrome.verifyEmailTitle
+            : i18n.chrome.resetPasswordTitle;
   const subtitle =
     mode === 'forgot'
-      ? 'Enter your account email and we will send you a link to reset your password.'
+      ? i18n.chrome.forgotPasswordSubtitle
       : mode === 'reset'
-        ? 'Choose a new password for your account.'
+        ? i18n.chrome.resetPasswordSubtitle
         : mode === 'verify'
-          ? 'Confirming your email address.'
-          : null;
+          ? i18n.chrome.verifyEmailSubtitle
+          : '';
 
   return (
-    <AuthFrame title={title} subtitle={subtitle}>
+    <AuthFrame screenTitle={title} screenSubtitle={subtitle}>
       {mode === 'login' ? (
         <Login
           onSwitchToRegister={() => {
-            window.location.href = '/register';
+            navigateToPath('/register');
           }}
         />
       ) : mode === 'register' ? (
         <Register
           onSwitchToLogin={() => {
-            window.location.href = '/login';
+            openSignIn();
           }}
         />
       ) : mode === 'forgot' ? (

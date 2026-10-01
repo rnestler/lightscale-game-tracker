@@ -1,12 +1,13 @@
-import type { JSX } from 'react';
-import { useState } from 'react';
-import type * as $Domain from '../types/domain';
-import { usePermissions, canUpdateField, canCreateField } from '../hooks/usePermissions';
+import { i18n } from '../i18n/text';
+import { useState, type JSX } from 'react';
 import { useGames } from '../hooks/useGames';
+import { Input } from './ui/input';
+import { FormField, FormRichTextEditor } from './ui/form-field';
+import { usePermissions } from '../hooks/usePermissions';
+import { refusalFieldErrors, runWithToast } from '../utils/errorHandling';
+import type * as $Domain from '../types/domain';
+import { ChevronDownIcon, Loader2Icon } from 'lucide-react';
 import { toast } from '../utils/toast';
-
-import { getErrorMessage, refusalFieldErrors, runWithToast } from '../utils/errorHandling';
-import { textValue } from '../utils/recordValues';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -16,12 +17,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  focusFirstField,
 } from './ui/dialog';
-import { Input } from './ui/input';
-import { FormField, FormRichTextEditor } from './ui/form-field';
-import { ErrorMessage } from './ui/error-message';
-import { ChevronDownIcon, Loader2Icon } from 'lucide-react';
-
+type FormErrors = Partial<Record<string, string>>;
+const SELECT_OPTION_STYLE = { backgroundColor: 'var(--background)', color: 'var(--foreground)' };
 interface GameTypeEditDialogProps {
   open: boolean;
   editing: $Domain.GameType | null;
@@ -44,9 +43,6 @@ interface GameTypeEditDialogProps {
   }) => Promise<{ id: string } | void>;
 }
 
-type FormErrors = Partial<Record<string, string>>;
-const SELECT_OPTION_STYLE = { backgroundColor: 'var(--background)', color: 'var(--foreground)' };
-
 export function GameTypeEditDialog({
   open,
   editing,
@@ -57,73 +53,83 @@ export function GameTypeEditDialog({
   defaults = {},
 }: GameTypeEditDialogProps): JSX.Element {
   const { permissions } = usePermissions();
-  const gamesHook = useGames({ autoLoad: false });
-  const [name$, setName$] = useState('');
-  const [category$, setCategory$] = useState('chess');
-  const [rulesVariant$, setRulesVariant$] = useState('');
-  const [defaultRating$, setDefaultRating$] = useState('1200');
-  const [description$, setDescription$] = useState('');
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [rootError, setRootError] = useState<string | null>(null);
-  const [seededKey, setSeededKey] = useState<string | null>(null);
-  const seedKey = open ? (editing?.id ?? 'new') : null;
-  if (seededKey !== seedKey) {
-    setSeededKey(seedKey);
-    if (seedKey !== null && editing) {
-      setName$(textValue(editing.name));
-      setCategory$(textValue(editing.category));
-      setRulesVariant$(textValue(editing.rulesVariant));
-      setDefaultRating$(textValue(editing.defaultRating));
-      setDescription$(textValue(editing.description));
-      setErrors({});
-      setRootError(null);
-    } else if (seedKey !== null) {
-      setName$(defaults.name ?? '');
-      setCategory$(defaults.category ?? 'chess');
-      setRulesVariant$(defaults.rulesVariant ?? '');
-      setDefaultRating$(
-        defaults.defaultRating !== undefined ? String(defaults.defaultRating) : '1200'
+  const { reloadGames, createGameType, updateGameType } = useGames({ autoLoad: false });
+  const canSubmitEditGameType = editing
+    ? (permissions?.['games']?.update ?? false)
+    : (permissions?.['games']?.create ?? false);
+  const [editGameTypeName$, setEditGameTypeName$] = useState(defaults.name ?? '');
+  const [editGameTypeCategory$, setEditGameTypeCategory$] = useState(defaults.category ?? 'chess');
+  const [editGameTypeRulesVariant$, setEditGameTypeRulesVariant$] = useState(
+    defaults.rulesVariant ?? ''
+  );
+  const [editGameTypeDefaultRating$, setEditGameTypeDefaultRating$] = useState(
+    defaults.defaultRating !== undefined ? String(defaults.defaultRating) : '1200'
+  );
+  const [editGameTypeDescription$, setEditGameTypeDescription$] = useState(
+    defaults.description ?? ''
+  );
+  const [editGameTypeErrors, setEditGameTypeErrors] = useState<FormErrors>({});
+  const [editGameTypeSeededId, setEditGameTypeSeededId] = useState<string | null>(null);
+  const editGameTypeSeedKey = open ? (editing?.id ?? 'new') : null;
+  if (editGameTypeSeededId !== editGameTypeSeedKey) {
+    setEditGameTypeSeededId(editGameTypeSeedKey);
+    if (editGameTypeSeedKey !== null) {
+      setEditGameTypeName$(editing ? editing.name : (defaults.name ?? ''));
+      setEditGameTypeCategory$(editing ? editing.category : (defaults.category ?? 'chess'));
+      setEditGameTypeRulesVariant$(editing ? editing.rulesVariant : (defaults.rulesVariant ?? ''));
+      setEditGameTypeDefaultRating$(
+        editing
+          ? String(editing.defaultRating)
+          : defaults.defaultRating !== undefined
+            ? String(defaults.defaultRating)
+            : '1200'
       );
-      setDescription$(defaults.description ?? '');
-      setErrors({});
-      setRootError(null);
+      setEditGameTypeDescription$(editing ? editing.description : (defaults.description ?? ''));
+      setEditGameTypeErrors({});
     }
   }
-  async function submit(): Promise<void> {
+  async function submitEditGameType(): Promise<void> {
     const newErrors: FormErrors = {};
-    if (!name$.trim()) {
-      newErrors.name = 'Game Name is required.';
+    if (!editGameTypeName$.trim()) {
+      newErrors.name = i18n.fill(i18n.chrome.fieldRequired, { label: i18n.word('GameType.name') });
     }
-    if (!category$.trim()) {
-      newErrors.category = 'Category is required.';
+    if (!editGameTypeCategory$.trim()) {
+      newErrors.category = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('GameType.category'),
+      });
     }
-    setErrors(newErrors);
+    setEditGameTypeErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
       return;
     }
-    const data = {
-      name: name$,
-      category: category$,
-      rulesVariant: rulesVariant$,
-      defaultRating: defaultRating$.trim() === '' ? 0 : Math.trunc(parseFloat(defaultRating$)),
-      description: description$,
-    };
     try {
+      const draft = {
+        name: editGameTypeName$,
+        category: editGameTypeCategory$,
+        rulesVariant: editGameTypeRulesVariant$,
+        defaultRating:
+          editGameTypeDefaultRating$.trim() === ''
+            ? 0
+            : Math.trunc(parseFloat(editGameTypeDefaultRating$)),
+        description: editGameTypeDescription$,
+      };
       if (onSave) {
-        await onSave(data);
+        await onSave(draft);
+      } else if (editing) {
+        await updateGameType({ ...editing, ...draft });
+        toast(i18n.chrome.itemSaved);
       } else {
-        if (editing) {
-          await gamesHook.updateGameType({ id: editing.id, ...data });
-        } else {
-          await gamesHook.createGameType(data);
-        }
-        toast(editing !== null ? 'Changes saved.' : 'Game created.');
-        await gamesHook.reloadGames();
+        await createGameType(draft);
+        toast(i18n.fill(i18n.chrome.itemCreated, { name: i18n.word('GameType') }));
+      }
+      if (!onSave) {
+        await reloadGames();
       }
       if (onSaved) {
         onSaved();
       }
       onClose();
+      setEditGameTypeErrors({});
     } catch (error) {
       const fieldErrors = refusalFieldErrors(error, [
         'name',
@@ -133,137 +139,143 @@ export function GameTypeEditDialog({
         'description',
       ]);
       if (fieldErrors === null) {
-        setRootError(getErrorMessage(error, 'Save failed'));
-      } else {
-        setErrors(fieldErrors);
+        throw error;
       }
+      setEditGameTypeErrors(fieldErrors);
     }
   }
-  const selectedLabel = editing ? 'Edit game' : 'New game';
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{selectedLabel}</DialogTitle>
+          <DialogTitle>
+            {editing
+              ? i18n.fill(i18n.chrome.editLabel, { name: i18n.word('GameType') })
+              : i18n.fill(i18n.chrome.newLabel, { name: i18n.word('GameType') })}
+          </DialogTitle>
           <DialogDescription>
-            Fill in the game details below. Required fields are marked with an asterisk.
+            {i18n.fill(i18n.chrome.editDescription, { name: i18n.word('GameType') })}
           </DialogDescription>
         </DialogHeader>
+        {editing?._sample && (
+          <p role="note" className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+            {i18n.chrome.sampleConversion}
+          </p>
+        )}
         <form
+          ref={focusFirstField}
+          className="flex flex-1 flex-col min-h-0"
           onSubmit={(submitEvent) => {
             submitEvent.preventDefault();
-            runWithToast(submit());
+            submitEvent.stopPropagation();
+            runWithToast(submitEditGameType());
           }}
         >
           <DialogBody>
-            <div data-ls="0a4b39be94" className="space-y-6">
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(permissions, 'games', 'name') && (
-                  <FormField data-ls="285a6dac7c" label="Game Name" required error={errors.name}>
-                    <Input
-                      type="text"
-                      value={name$}
-                      onChange={(e) => {
-                        setName$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(permissions, 'games', 'category') && (
-                  <FormField data-ls="30ec169544" label="Category" required error={errors.category}>
-                    <div className="relative">
-                      <select
-                        value={category$}
-                        onChange={(e) => {
-                          setCategory$(e.target.value);
-                        }}
-                        className={`flex h-10 w-full rounded-md border border-input bg-transparent pl-3 pr-9 py-2 text-sm ring-offset-background hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${category$ === '' ? 'text-muted-foreground' : 'text-foreground'}`}
-                      >
-                        <option value="" disabled hidden style={SELECT_OPTION_STYLE}>
-                          Select category...
-                        </option>
-                        <option value="chess" style={SELECT_OPTION_STYLE}>
-                          Chess &amp; Variants
-                        </option>
-                        <option value="billiards" style={SELECT_OPTION_STYLE}>
-                          Billiards / Pool
-                        </option>
-                        <option value="tableTennis" style={SELECT_OPTION_STYLE}>
-                          Table Tennis
-                        </option>
-                        <option value="darts" style={SELECT_OPTION_STYLE}>
-                          Darts
-                        </option>
-                        <option value="boardGames" style={SELECT_OPTION_STYLE}>
-                          Board Games
-                        </option>
-                        <option value="cardGames" style={SELECT_OPTION_STYLE}>
-                          Card Games
-                        </option>
-                        <option value="custom" style={SELECT_OPTION_STYLE}>
-                          Custom / Other
-                        </option>
-                      </select>
-                      <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    </div>
-                  </FormField>
-                )}
-              </div>
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'games',
-                  'rulesVariant'
-                ) && (
-                  <FormField
-                    data-ls="8095e212ec"
-                    label="Variant / Ruleset"
-                    error={errors.rulesVariant}
-                  >
-                    <Input
-                      type="text"
-                      value={rulesVariant$}
-                      onChange={(e) => {
-                        setRulesVariant$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'games',
-                  'defaultRating'
-                ) && (
-                  <FormField
-                    data-ls="ac7d048665"
-                    label="Starting Rating (Default 1200)"
-                    error={errors.defaultRating}
-                  >
-                    <Input
-                      type="number"
-                      step="1"
-                      inputMode="numeric"
-                      value={defaultRating$}
-                      onChange={(e) => {
-                        setDefaultRating$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-              </div>
-              {(editing ? canUpdateField : canCreateField)(permissions, 'games', 'description') && (
+            <div className="@container flex flex-col gap-6" data-ls="0a4b39be94">
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
                 <FormField
-                  data-ls="7c3d9b930c"
-                  label="Overview &amp; Rules"
-                  error={errors.description}
+                  data-ls="285a6dac7c"
+                  label={i18n.word('GameType.name')}
+                  required
+                  error={editGameTypeErrors.name}
                 >
-                  <FormRichTextEditor value={description$} onChange={setDescription$} />
+                  <Input
+                    type="text"
+                    value={editGameTypeName$}
+                    onChange={(e) => {
+                      setEditGameTypeName$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
                 </FormField>
-              )}
-              {rootError !== null && <ErrorMessage message={rootError} />}
+                <FormField
+                  data-ls="30ec169544"
+                  label={i18n.word('GameType.category')}
+                  required
+                  error={editGameTypeErrors.category}
+                >
+                  <div className="relative">
+                    <select
+                      value={editGameTypeCategory$}
+                      onChange={(e) => {
+                        setEditGameTypeCategory$(e.target.value);
+                      }}
+                      className={`flex h-10 w-full min-w-0 rounded-md border border-input bg-transparent pl-3 pr-9 py-2 text-sm ring-offset-background hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${editGameTypeCategory$ === '' ? 'text-muted-foreground' : 'text-foreground'}`}
+                    >
+                      <option value="" disabled hidden style={SELECT_OPTION_STYLE}>
+                        {i18n.fill(i18n.chrome.selectPlaceholder, {
+                          name: i18n.word('GameType.category'),
+                        })}
+                      </option>
+                      <option value="chess" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Chess & Variants'")}
+                      </option>
+                      <option value="billiards" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Billiards / Pool'")}
+                      </option>
+                      <option value="tableTennis" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Table Tennis'")}
+                      </option>
+                      <option value="darts" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Darts'")}
+                      </option>
+                      <option value="boardGames" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Board Games'")}
+                      </option>
+                      <option value="cardGames" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Card Games'")}
+                      </option>
+                      <option value="custom" style={SELECT_OPTION_STYLE}>
+                        {i18n.word("'Custom / Other'")}
+                      </option>
+                    </select>
+                    <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </FormField>
+              </div>
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+                <FormField
+                  data-ls="8095e212ec"
+                  label={i18n.word('GameType.rulesVariant')}
+                  error={editGameTypeErrors.rulesVariant}
+                >
+                  <Input
+                    type="text"
+                    value={editGameTypeRulesVariant$}
+                    onChange={(e) => {
+                      setEditGameTypeRulesVariant$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
+                </FormField>
+                <FormField
+                  data-ls="ac7d048665"
+                  label={i18n.word('GameType.defaultRating')}
+                  error={editGameTypeErrors.defaultRating}
+                >
+                  <Input
+                    type="number"
+                    step="1"
+                    inputMode="numeric"
+                    value={editGameTypeDefaultRating$}
+                    onChange={(e) => {
+                      setEditGameTypeDefaultRating$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
+                </FormField>
+              </div>
+              <FormField
+                data-ls="7c3d9b930c"
+                label={i18n.word('GameType.description')}
+                error={editGameTypeErrors.description}
+              >
+                <FormRichTextEditor
+                  value={editGameTypeDescription$}
+                  onChange={setEditGameTypeDescription$}
+                />
+              </FormField>
             </div>
           </DialogBody>
           <DialogFooter>
@@ -273,26 +285,30 @@ export function GameTypeEditDialog({
               onClick={onClose}
               className="rounded-md h-10 px-4 text-sm"
             >
-              Cancel
+              {i18n.chrome.cancel}
             </Button>
-            <Button
-              type="submit"
-              data-ls="30778e7559"
-              variant="default"
-              disabled={isBusy}
-              className="rounded-md shadow-sm h-10 px-4 text-sm"
-            >
-              {isBusy ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2Icon className="h-4 w-4 animate-spin" />
-                  {'Saving...'}
-                </span>
-              ) : editing ? (
-                'Save changes'
-              ) : (
-                'Create game'
-              )}
-            </Button>
+            {canSubmitEditGameType && (
+              <Button
+                type="submit"
+                data-ls="30778e7559"
+                variant="default"
+                disabled={isBusy}
+                className="rounded-md shadow-sm h-10 px-4 text-sm"
+              >
+                {isBusy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2Icon className="h-4 w-4 animate-spin" />
+                    {i18n.chrome.savingIndicator}
+                  </span>
+                ) : editing?._sample ? (
+                  i18n.chrome.saveAsNormalRecord
+                ) : editing ? (
+                  i18n.chrome.saveChanges
+                ) : (
+                  i18n.fill(i18n.chrome.createItem, { name: i18n.word('GameType') })
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

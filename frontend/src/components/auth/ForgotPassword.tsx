@@ -1,6 +1,8 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState } from 'react';
 import { authClient } from '../../api/authClient.js';
+import { openSignIn } from '../../utils/recordNavigation.js';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 
@@ -29,18 +31,17 @@ export function ForgotPassword(): JSX.Element {
     return (
       <div className="flex flex-col gap-6">
         <div className="rounded-lg border border-border bg-secondary p-3 text-sm text-foreground">
-          If an account with password credentials exists for that email, a password reset link is on
-          its way. Check your inbox.
+          {i18n.chrome.forgotPasswordSent}
         </div>
         <Button
           type="button"
           variant="ghost"
           onClick={() => {
-            window.location.href = '/login';
+            openSignIn();
           }}
           className="text-foreground hover:opacity-80 focus-visible:outline-primary"
         >
-          Back to sign in
+          {i18n.chrome.backToSignIn}
         </Button>
       </div>
     );
@@ -55,7 +56,7 @@ export function ForgotPassword(): JSX.Element {
     >
       <div className="flex flex-col gap-2">
         <label htmlFor="email" className="text-sm font-medium text-foreground">
-          Email
+          {i18n.chrome.emailLabel}
         </label>
         <Input
           id="email"
@@ -77,19 +78,19 @@ export function ForgotPassword(): JSX.Element {
         className="bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-primary"
         size="lg"
       >
-        {isLoading ? 'Sending…' : 'Send reset link'}
+        {isLoading ? i18n.chrome.forgotPasswordSending : i18n.chrome.forgotPasswordSubmit}
       </Button>
 
       <Button
         type="button"
         variant="ghost"
         onClick={() => {
-          window.location.href = '/login';
+          openSignIn();
         }}
         disabled={isLoading}
         className="text-foreground hover:opacity-80 focus-visible:outline-primary"
       >
-        Back to sign in
+        {i18n.chrome.backToSignIn}
       </Button>
     </form>
   );

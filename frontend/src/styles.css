@@ -25,6 +25,10 @@
   --color-destructive-text: var(--destructive-text);
   --color-shell: var(--shell);
   --color-shell-foreground: var(--shell-foreground);
+  --color-warning: var(--semantic-warning);
+  --color-warning-foreground: var(--semantic-warning-text);
+  --color-success: var(--semantic-success);
+  --color-success-foreground: var(--semantic-success-text);
 
   --radius-sm: 0.75rem;
   --radius-md: 0.875rem;
@@ -99,16 +103,14 @@
   --control-danger-soft-fg: var(--destructive-text);
   --overlay-backdrop: color-mix(in oklch, var(--foreground), transparent 28%);
   --overlay-soft-backdrop: color-mix(in oklch, var(--foreground), transparent 44%);
-  --backdrop-glow-lead: color-mix(in oklch, var(--primary), transparent 72%);
-  --backdrop-glow-counter: color-mix(in oklch, var(--accent), transparent 62%);
-  --backdrop-glow-base: color-mix(in oklch, var(--primary), transparent 86%);
+  --backdrop-glow-lead: color-mix(in oklch, var(--primary), transparent 85%);
+  --backdrop-glow-counter: color-mix(in oklch, var(--primary), transparent 91%);
+  --backdrop-glow-base: color-mix(in oklch, var(--primary), transparent 93%);
   --backdrop-fade-lead: color-mix(in oklch, var(--primary), transparent 100%);
-  --backdrop-fade-counter: color-mix(in oklch, var(--accent), transparent 100%);
+  --backdrop-fade-counter: color-mix(in oklch, var(--primary), transparent 100%);
   --dialog-radius: var(--radius-xl);
   --sheet-radius: var(--radius-xl);
-  --content-max-width: 72rem;
   --prose-max-width: 48rem;
-  --shop-max-width: 96rem;
 }
 
 :root {
@@ -131,11 +133,6 @@
   --border: oklch(0 0 0);
   --input: oklch(0.5555 0 89.88);
   --ring: oklch(0.7853 0.1041 274.71);
-  --chart-1: oklch(0.5106 0.2301 276.97);
-  --chart-2: oklch(0.7038 0.123 182.5);
-  --chart-3: oklch(0.7686 0.1647 70.08);
-  --chart-4: oklch(0.6559 0.2118 354.31);
-  --chart-5: oklch(0.7227 0.192 149.58);
   --sidebar: oklch(0.9789 0.0082 121.63);
   --sidebar-foreground: oklch(0 0 0);
   --sidebar-primary: oklch(0.5106 0.2301 276.97);
@@ -171,11 +168,6 @@
   --border: oklch(0.4459 0 89.88);
   --input: oklch(1 0 89.88);
   --ring: oklch(0.6801 0.1583 276.93);
-  --chart-1: oklch(0.6801 0.1583 276.93);
-  --chart-2: oklch(0.7845 0.1325 181.91);
-  --chart-3: oklch(0.879 0.1534 91.61);
-  --chart-4: oklch(0.7253 0.1752 349.76);
-  --chart-5: oklch(0.8003 0.1821 151.71);
   --sidebar: oklch(0 0 0);
   --sidebar-foreground: oklch(1 0 89.88);
   --sidebar-primary: oklch(0.6801 0.1583 276.93);
@@ -195,9 +187,9 @@
   --surface-shadow-md: 0 10px 28px rgba(0, 0, 0, 0.45);
   --surface-shadow-lg: 0 20px 44px rgba(0, 0, 0, 0.5);
   --surface-shadow-xl: 0 32px 64px rgba(0, 0, 0, 0.56);
-  --backdrop-glow-lead: color-mix(in oklch, var(--primary), transparent 62%);
-  --backdrop-glow-counter: color-mix(in oklch, var(--accent), transparent 54%);
-  --backdrop-glow-base: color-mix(in oklch, var(--primary), transparent 78%);
+  --backdrop-glow-lead: color-mix(in oklch, var(--primary), transparent 80%);
+  --backdrop-glow-counter: color-mix(in oklch, var(--primary), transparent 88%);
+  --backdrop-glow-base: color-mix(in oklch, var(--primary), transparent 90%);
   --overlay-backdrop: rgba(0, 0, 0, 0.6);
   --overlay-soft-backdrop: rgba(0, 0, 0, 0.72);
 }
@@ -322,7 +314,9 @@ button:not(:disabled) {
   box-shadow: var(--surface-shadow-lg) !important;
 }
 
-[class*='border-border'][class*='bg-card'] {
+[class*='border-border'][class*='bg-card']:not(.ui-dialog-panel):not(.ui-sheet-panel):not(
+    [style*='background-color']
+  ) {
   border-width: var(--surface-border-width) !important;
   background: var(--surface-card-bg) !important;
   color: var(--surface-card-foreground) !important;
@@ -330,6 +324,10 @@ button:not(:disabled) {
 
 .ui-display {
   font-family: var(--font-display, inherit);
+}
+
+.ui-viewport-bar {
+  right: var(--removed-body-scroll-bar-size, 0px);
 }
 
 .ui-avatar {
@@ -430,6 +428,16 @@ button:not(:disabled) {
     white-space: nowrap;
     overflow-wrap: normal;
   }
+
+  .ui-table td .ui-cell > * {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.grid > :not([class*='min-w-']) {
+  min-width: 0;
 }
 
 .ui-card-interactive {
@@ -606,6 +614,7 @@ button:not(:disabled) {
 }
 
 .prose {
+  font-family: var(--font-prose, inherit);
   line-height: 1.7;
 }
 
@@ -901,8 +910,26 @@ button:not(:disabled) {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 .ui-table td {
   font-variant-numeric: tabular-nums;
+}
+
+.ui-table td .ui-cell:empty::after,
+.ui-table td .ui-cell > span:only-child:empty::after,
+.ui-table td .ui-cell > a:only-child:empty::after {
+  content: '\2014';
+  color: var(--muted-foreground);
 }
 
 ::selection {
@@ -941,6 +968,35 @@ button:not(:disabled) {
 
 :root {
   --font-sans: Unbounded, sans-serif;
+  --primary: oklch(0.7049 0.1867 47.6);
+  --accent: oklch(0.6461 0.1943 41.12);
+  --ring: oklch(0.7049 0.1867 47.6);
+  --sidebar-primary: oklch(0.7049 0.1867 47.6);
+  --sidebar-accent: oklch(0.6461 0.1943 41.12);
+  --primary-foreground: oklch(0 0 0);
+  --accent-foreground: oklch(0 0 0);
+  --sidebar-primary-foreground: oklch(0 0 0);
+  --sidebar-accent-foreground: oklch(0 0 0);
+  --primary: oklch(0.6702 0.1775 47.42);
+  --primary-foreground: oklch(0 0 0);
+  --sidebar-primary: oklch(0.6702 0.1775 47.42);
+  --sidebar-primary-foreground: oklch(0 0 0);
+  --primary-text: oklch(0.5662 0.1479 47.98);
+  --accent-text: oklch(0.571 0.1706 41.26);
+}
+
+.dark {
+  --primary: oklch(0.7049 0.1867 47.6);
+  --accent: oklch(0.6461 0.1943 41.12);
+  --ring: oklch(0.7049 0.1867 47.6);
+  --sidebar-primary: oklch(0.7049 0.1867 47.6);
+  --sidebar-accent: oklch(0.6461 0.1943 41.12);
+  --primary-foreground: oklch(0 0 0);
+  --accent-foreground: oklch(0 0 0);
+  --sidebar-primary-foreground: oklch(0 0 0);
+  --sidebar-accent-foreground: oklch(0 0 0);
+  --primary-text: oklch(0.7049 0.1867 47.6);
+  --accent-text: oklch(0.6461 0.1943 41.12);
 }
 
 * {

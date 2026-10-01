@@ -2,6 +2,7 @@ export interface AuthResult {
   data?: {
     twoFactorRedirect?: boolean;
     session?: Session;
+    user?: User;
     token?: string;
     totpURI?: string;
     backupCodes?: string[];

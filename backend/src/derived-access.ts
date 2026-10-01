@@ -3,14 +3,38 @@ import { admitDerivedRows, projectReadableFields, type Caller } from './authoriz
 
 const DERIVED_ROWS_FIELDS: Record<string, DerivedRowsField[] | undefined> = {
   GameType: [
-    { key: 'leaderboard', element: 'LeaderboardEntry', rows: { resource: 'leaderboards' } },
+    {
+      key: 'leaderboard',
+      element: 'LeaderboardEntry',
+      columns: [
+        'id',
+        'playerId',
+        'gameId',
+        'rating',
+        'matchesPlayed',
+        'wins',
+        'losses',
+        'draws',
+        'lastPlayedAt',
+      ],
+      rows: { resource: 'leaderboards' },
+    },
   ],
 };
 
 interface DerivedRowsField {
   key: string;
   element: string;
+  columns: string[];
   rows: { resource: string } | { field: string };
+}
+
+function storedColumns(row: Record<string, unknown>, columns: string[]): Record<string, unknown> {
+  const stored: Record<string, unknown> = {};
+  for (const column of columns) {
+    stored[column] = row[column];
+  }
+  return stored;
 }
 
 export async function readableDerivedRows(
@@ -38,7 +62,7 @@ export async function readableDerivedRows(
         const nested = await readableDerivedRows(
           client,
           entry.element,
-          admitted.row,
+          storedColumns(admitted.row, entry.columns),
           caller,
           path,
           within

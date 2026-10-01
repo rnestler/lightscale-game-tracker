@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
-import { MANAGEMENT_ROLES, ROW_POLICIES } from './access-policy.js';
-import type { RowGrant, RowParent, RowPolicy } from './access-policy.js';
+import { INDIVIDUAL_MEMBERSHIPS, MANAGEMENT_ROLES, ROW_POLICIES } from './access-policy.js';
+import type { IndividualMembership, RowGrant, RowParent, RowPolicy } from './access-policy.js';
 import type { Queryable } from './db.js';
 
 export async function loadUserRoles(pool: Pool, userId: string): Promise<string[]> {
@@ -126,12 +126,57 @@ function wholeRecord(path: string, roles: string[]): boolean {
 }
 
 export function hasGrant(path: string, operation: GrantOperation, roles: string[]): boolean {
-  return isAdmin(roles) || matchingGrants(path, operation, roles).length > 0;
+  if (isAdmin(roles)) {
+    return true;
+  }
+  return rowPolicy(path).individual
+    ? hasAppAccess(roles)
+    : matchingGrants(path, operation, roles).length > 0;
+}
+
+function individualMemberships(table: string): IndividualMembership[] {
+  return INDIVIDUAL_MEMBERSHIPS[table] ?? [];
+}
+
+export function sharedRowClause(table: string, alias: string): string | null {
+  const memberships = individualMemberships(table);
+  if (memberships.length === 0) {
+    return null;
+  }
+  const held: string[] = [];
+  for (const membership of memberships) {
+    held.push(`SELECT "${membership.column}" FROM "${membership.table}"`);
+  }
+  return `${alias}.id NOT IN (${held.join(' UNION ')})`;
 }
 
 export function sqlParameter(values: unknown[], value: unknown): string {
   values.push(value);
   return `$${values.length}`;
+}
+
+function foreignIndividualClause(
+  table: string,
+  userId: string | null,
+  alias: string,
+  values: unknown[]
+): string | null {
+  const memberships = individualMemberships(table);
+  if (memberships.length === 0) {
+    return null;
+  }
+  const user = userId === null ? null : sqlParameter(values, userId);
+  const held: string[] = [];
+  const own: string[] = [];
+  for (const membership of memberships) {
+    const members = `SELECT "${membership.column}" FROM "${membership.table}"`;
+    held.push(members);
+    if (user !== null) {
+      own.push(`${members} WHERE "userId" = ${user}`);
+    }
+  }
+  const foreign = `${alias}.id IN (${held.join(' UNION ')})`;
+  return user === null ? foreign : `${foreign} AND ${alias}.id NOT IN (${own.join(' UNION ')})`;
 }
 
 function anyOf(clauses: string[]): string {
@@ -263,6 +308,12 @@ export function admissionClause(
 ): string | null {
   if (unrestricted(path, operation, caller.roles)) {
     return null;
+  }
+  const policy = rowPolicy(path);
+  if (policy.individual && policy.parent === null) {
+    return caller.userId === null
+      ? 'FALSE'
+      : membershipClause(policy, caller.userId, alias, values);
   }
   const grants = matchingGrants(path, operation, caller.roles);
   if (rowPolicy(path).parent !== null && !selfContained(grants)) {
@@ -545,8 +596,12 @@ export async function writtenColumns(
   return readColumns(path, caller.roles, row, ownedFlag(rows[0]));
 }
 
-function storesFile(stored: unknown, fileId: string): boolean {
-  return Array.isArray(stored) ? stored.includes(fileId) : stored === fileId;
+function storesFile(row: Row, field: string, fileId: string): boolean {
+  const stored = row[field];
+  if (Array.isArray(stored) ? stored.includes(fileId) : stored === fileId) {
+    return true;
+  }
+  return row[`$holds_${field}`] === true;
 }
 
 export function rowsExposeFile(
@@ -562,7 +617,7 @@ export function rowsExposeFile(
       throw new Error(`A row of '${path}' passed the access gate without an admitting grant`);
     }
     for (const field of fileFields) {
-      if (storesFile(row[field], fileId) && (admitted === null || admitted.has(field))) {
+      if (storesFile(row, field, fileId) && (admitted === null || admitted.has(field))) {
         return true;
       }
     }
@@ -614,12 +669,12 @@ export interface RecordParameter {
 
 async function recordMatches(
   client: Queryable,
-  path: string,
+  table: string,
   clause: string,
   values: unknown[]
 ): Promise<boolean> {
   const { rows } = await client.query<Row>(
-    `SELECT 1 FROM "${rowPolicy(path).table}" f WHERE f.id = $1 AND ${clause}`,
+    `SELECT 1 FROM "${table}" f WHERE f.id = $1 AND ${clause}`,
     values
   );
   return rows.length > 0;
@@ -648,7 +703,7 @@ function callerMayReadRecord(
   if (userId !== null) {
     clauses.push(recordOwnership(path, userId, roles, 'f', values));
   }
-  return recordMatches(client, path, anyOf(clauses), values);
+  return recordMatches(client, rowPolicy(path).table, anyOf(clauses), values);
 }
 
 function callerOwnsRecord(
@@ -662,7 +717,8 @@ function callerOwnsRecord(
     return Promise.resolve(false);
   }
   const values: unknown[] = [recordId];
-  return recordMatches(client, path, recordOwnership(path, userId, roles, 'f', values), values);
+  const ownership = recordOwnership(path, userId, roles, 'f', values);
+  return recordMatches(client, rowPolicy(path).table, ownership, values);
 }
 
 function recordIds(parameters: RecordParameter[], table: string, body: Row): string[] {
@@ -674,6 +730,26 @@ function recordIds(parameters: RecordParameter[], table: string, body: Row): str
     }
   }
   return ids;
+}
+
+async function foreignIndividualParameter(
+  client: Queryable,
+  caller: Caller,
+  parameters: RecordParameter[],
+  body: Row
+): Promise<string | null> {
+  for (const parameter of parameters) {
+    const value = body[parameter.name];
+    const values: unknown[] = [value];
+    const clause =
+      typeof value === 'string' && value !== ''
+        ? foreignIndividualClause(parameter.table, caller.userId, 'f', values)
+        : null;
+    if (clause !== null && (await recordMatches(client, parameter.table, clause, values))) {
+      return parameter.name;
+    }
+  }
+  return null;
 }
 
 async function unreadableParameter(
@@ -754,7 +830,9 @@ export async function refuseCall(
   if (granted.length === 0) {
     return 'Insufficient permissions to call this transaction';
   }
-  const unreadable = await unreadableParameter(client, caller, granted, parameters, body);
+  const unreadable =
+    (await foreignIndividualParameter(client, caller, parameters, body)) ??
+    (await unreadableParameter(client, caller, granted, parameters, body));
   if (unreadable !== null) {
     return `Insufficient permissions to read parameter '${unreadable}'`;
   }

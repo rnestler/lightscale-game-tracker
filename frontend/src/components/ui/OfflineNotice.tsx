@@ -1,3 +1,4 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import { CloudOff, Wifi } from 'lucide-react';
@@ -18,7 +19,7 @@ export function OfflineNotice(): JSX.Element | null {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-4 z-[300] flex justify-center px-4"
+      className="ui-viewport-bar pointer-events-none fixed inset-x-0 top-4 z-[300] flex justify-center px-4"
       role="status"
       aria-live="polite"
     >
@@ -45,11 +46,11 @@ export function OfflineNotice(): JSX.Element | null {
           )}
         </span>
         <span className="truncate text-sm font-medium text-foreground">
-          {restored ? 'Back online' : 'No connection'}
+          {restored ? i18n.chrome.offlineRestored : i18n.chrome.offlineTitle}
         </span>
         {!restored && (
           <span className="hidden truncate text-sm text-muted-foreground sm:inline">
-            {'Trying to reconnect…'}
+            {i18n.chrome.offlineDescription}
           </span>
         )}
       </div>

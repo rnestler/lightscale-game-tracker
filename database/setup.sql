@@ -18,9 +18,6 @@ ALTER USER :"db_user" WITH PASSWORD :'db_password';
 \endif
 
 GRANT ALL PRIVILEGES ON DATABASE :"db_name" TO :"db_user";
-\if :includes_data
-GRANT SET ON PARAMETER session_replication_role TO :"db_user";
-\endif
 \connect :"db_name"
 GRANT ALL ON SCHEMA public TO :"db_user";
 SELECT format('ALTER TABLE public.%I OWNER TO %I', tablename, :'db_user') FROM pg_tables WHERE schemaname = 'public' AND tableowner <> :'db_user' \gexec

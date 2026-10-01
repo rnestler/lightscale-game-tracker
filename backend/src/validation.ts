@@ -1,29 +1,13 @@
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const URL_PATTERN = /^https?:\/\/.+\..+/;
-const PHONE_PATTERN = /^\+?[\d\s\-().]{6,}$/;
+const EMAIL_PATTERN = /^[^\s@,;:<>()[\]"\\]+@[^\s@,;:<>()[\]"\\]+\.[^\s@,;:<>()[\]"\\]+$/;
 
-function isBlankOrMatching(value: unknown, pattern: RegExp): value is string {
-  if (typeof value !== 'string') {
-    return false;
-  }
-  const trimmed = value.trim();
-  return trimmed === '' || pattern.test(trimmed);
-}
-
-export function isEmailText(value: unknown): value is string {
-  return isBlankOrMatching(value, EMAIL_PATTERN);
-}
-
-export function isUrlText(value: unknown): value is string {
-  return isBlankOrMatching(value, URL_PATTERN);
-}
-
-export function isPhoneText(value: unknown): value is string {
-  return isBlankOrMatching(value, PHONE_PATTERN);
+export function isEmailAddress(value: unknown): value is string {
+  return typeof value === 'string' && EMAIL_PATTERN.test(value.trim());
 }
 
 const DATE_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?)?$/;
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.[0-9]{1,3})?)?$/;
 
 function isCalendarDay(year: number, month: number, day: number): boolean {
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -51,6 +35,24 @@ export function isDateText(value: unknown): value is string {
 
 export function isBlankOrDateText(value: unknown): value is string {
   return value === '' || isDateText(value);
+}
+
+export function isTimeText(value: unknown): value is string {
+  return typeof value === 'string' && TIME_PATTERN.test(value);
+}
+
+export function isBlankOrTimeText(value: unknown): value is string {
+  return value === '' || isTimeText(value);
+}
+
+export function isLocalDateTimeText(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9](\.[0-9]{1,3})?)?$/.test(
+      value
+    ) &&
+    isDateText(value)
+  );
 }
 
 export function isReferenceIdList(value: unknown): value is string[] {

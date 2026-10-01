@@ -1,10 +1,11 @@
+import { i18n } from '../i18n/text';
 import type { JSX } from 'react';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { onShellNavigation } from '../utils/recordNavigation';
 import { usePermissions } from '../hooks/usePermissions';
 import { apiBaseUrl } from '../config/apiConfig';
 import { runWithToast } from '../utils/errorHandling';
+import { isStoredBoolean, readStoredValue, writeStoredValue } from '../api/pagination';
 import { Button } from './ui/button';
 import { Avatar } from './ui/avatar';
 import {
@@ -15,12 +16,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
+import { useShell } from './shell';
+import { NotAvailable } from './NotAvailable';
 import {
   ArchiveIcon,
   DicesIcon,
   FolderIcon,
-  KeyRoundIcon,
   LockIcon,
   LogOutIcon,
   MenuIcon,
@@ -33,18 +34,12 @@ import {
   SparklesIcon,
   SunIcon,
   SwordsIcon,
-  Trash2Icon,
   TrophyIcon,
   UserIcon,
   UsersIcon,
   WorkflowIcon,
   XIcon,
 } from 'lucide-react';
-import { ChangePasswordSettings } from './auth/ChangePasswordSettings';
-import { PasskeySettings } from './auth/PasskeySettings';
-import { TwoFactorSettings } from './auth/TwoFactorSettings';
-import { DeleteAccountSettings } from './auth/DeleteAccountSettings';
-import { PrivacySettings } from './auth/PrivacySettings';
 import { DashboardPanel } from './DashboardPanel';
 import { LeaderboardsList } from './LeaderboardsList';
 import { MatchesList } from './MatchesList';
@@ -58,188 +53,53 @@ import { DataProtectionDashboard } from './DataProtectionDashboard';
 import { AutomationManagement } from './AutomationManagement';
 import { StaleDataView } from './StaleDataPanel';
 import { RuleViolationsView } from './RuleViolationsPanel';
+import { AccountSettings } from './AccountSettings';
 
-const VALID_VIEWS: readonly string[] = [
-  'leaderboards',
-  'matches',
-  'games',
-  'players',
-  'dashboard',
-  'gameLeaderboards',
-  'users',
-  'access',
-  'roles',
-  'data-protection',
-  'automation',
-  'stale',
-  'violations',
-  'account-settings',
-];
-const SHELL_VIEWS: Readonly<Record<string, string>> = {
-  leaderboards: 'leaderboards',
-  matches: 'matches',
-  games: 'games',
-  players: 'players',
-};
-const VIEW_LABELS: Record<string, string> = {
-  dashboard: 'Dashboard',
-  leaderboards: 'Leaderboards',
-  matches: 'Matches',
-  games: 'Games',
-  players: 'Players',
-  gameLeaderboards: 'Leaderboards by Game',
-  users: 'Users',
-  access: 'Access',
-  roles: 'Roles',
-  'data-protection': 'Data Protection',
-  automation: 'Automations',
-  stale: 'Stale data',
-  violations: 'Rule violations',
-  'account-settings': 'Settings',
+const VIEW_LABELS: Record<string, () => string> = {
+  dashboard: (): string => i18n.chrome.dashboard,
+  leaderboards: (): string => i18n.word('leaderboards'),
+  matches: (): string => i18n.word('matches'),
+  games: (): string => i18n.word('games'),
+  players: (): string => i18n.word('players'),
+  gameLeaderboards: (): string => i18n.word('gameLeaderboards'),
+  users: (): string => i18n.chrome.users,
+  access: (): string => i18n.chrome.accessTitle,
+  roles: (): string => i18n.chrome.rolePermissionsTab,
+  'data-protection': (): string => i18n.chrome.dataProtectionTab,
+  automation: (): string => i18n.chrome.automationTitle,
+  stale: (): string => i18n.chrome.staleDataTitle,
+  violations: (): string => i18n.chrome.ruleViolationsTitle,
+  'account-settings': (): string => i18n.chrome.settings,
 };
 
 export function Overview(): JSX.Element {
   const { user, signOut } = useAuth();
-  useEffect(() => {
-    document.title = 'GameRank Tracker';
-  }, []);
-  const {
-    permissions,
-    canAccess,
-    isLoading: permissionsLoading,
-    isAdmin,
-    allowAccountDeletion,
-  } = usePermissions();
-  const canDeleteAccount = allowAccountDeletion && !isAdmin;
+  const { permissions } = usePermissions();
   const [userRoles, setUserRoles] = useState<string[]>([]);
-
-  const accessibleViews = useMemo(() => {
-    const allViews: Array<'leaderboards' | 'matches' | 'games' | 'players'> = [
-      'matches',
-      'leaderboards',
-      'players',
-      'games',
-    ];
-    return allViews.filter((view) => canAccess(view));
-  }, [canAccess]);
+  const { activeView, setActiveView, viewNotAvailable, onNavigate, homeView } = useShell();
 
   const isUserAdmin = userRoles.includes('admin');
   const accountName = user?.name ?? user?.email ?? '';
   const accountEmail = user?.email ?? '';
-  const ROLE_LABELS: Record<string, string | undefined> = {
-    guest: 'Guest',
-    unassigned: 'Unassigned',
-    admin: 'Admin',
-    player: 'Player',
-    scorekeeper: 'Scorekeeper',
+  const ROLE_LABELS: Record<string, (() => string) | undefined> = {
+    guest: (): string => i18n.chrome.guest,
+    unassigned: (): string => i18n.chrome.unassigned,
+    admin: (): string => i18n.chrome.admin,
+    player: (): string => i18n.word('role.player'),
+    scorekeeper: (): string => i18n.word('role.scorekeeper'),
   };
-  const accountRoles = userRoles.map((role) => ROLE_LABELS[role] ?? role).join(', ');
+  const accountRoles = userRoles.map((role) => ROLE_LABELS[role]?.() ?? role).join(', ');
   const accountTitle = userRoles.length > 0 ? `${accountName} — ${accountRoles}` : accountName;
 
-  const [requestedView, setActiveView] = useState<
-    | 'leaderboards'
-    | 'matches'
-    | 'games'
-    | 'players'
-    | 'dashboard'
-    | 'gameLeaderboards'
-    | 'users'
-    | 'access'
-    | 'roles'
-    | 'data-protection'
-    | 'automation'
-    | 'stale'
-    | 'violations'
-    | 'account-settings'
-  >(() => {
-    const stored = sessionStorage.getItem('lightscale.activeView');
-    return stored !== null && VALID_VIEWS.includes(stored)
-      ? (stored as
-          | 'leaderboards'
-          | 'matches'
-          | 'games'
-          | 'players'
-          | 'dashboard'
-          | 'gameLeaderboards'
-          | 'users'
-          | 'access'
-          | 'roles'
-          | 'data-protection'
-          | 'automation'
-          | 'stale'
-          | 'violations'
-          | 'account-settings')
-      : 'dashboard';
-  });
-  const [activeSettingsTab, setActiveSettingsTab] = useState<
-    'password' | 'passkeys' | '2fa' | 'privacy' | 'account'
-  >('password');
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('lightscale.sidebarCollapsed') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
+    readStoredValue('lightscale.sidebarCollapsed', false, isStoredBoolean)
+  );
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(64);
 
-  const activeView = ((): typeof requestedView => {
-    if (permissionsLoading) {
-      return requestedView;
-    }
-    const pageKeys: string[] = ['dashboard', 'gameLeaderboards'];
-    const isPageView = pageKeys.includes(requestedView);
-    const isSpecialView =
-      requestedView === 'account-settings' ||
-      (isAdmin &&
-        (requestedView === 'users' ||
-          requestedView === 'access' ||
-          requestedView === 'roles' ||
-          requestedView === 'data-protection' ||
-          requestedView === 'automation' ||
-          requestedView === 'stale' ||
-          requestedView === 'violations'));
-    const isVariableViewAccessible = accessibleViews.some((view) => view === requestedView);
-    if (!isPageView && !isSpecialView && !isVariableViewAccessible && accessibleViews.length > 0) {
-      return accessibleViews[0];
-    }
-    return requestedView;
-  })();
-
-  const activeLabel = VIEW_LABELS[activeView];
-
-  useEffect(() => {
-    sessionStorage.setItem('lightscale.activeView', activeView);
-  }, [activeView]);
-
-  useEffect(
-    () =>
-      onShellNavigation(SHELL_VIEWS, (view) => {
-        setActiveView(
-          view as
-            | 'leaderboards'
-            | 'matches'
-            | 'games'
-            | 'players'
-            | 'dashboard'
-            | 'gameLeaderboards'
-            | 'users'
-            | 'access'
-            | 'roles'
-            | 'data-protection'
-            | 'automation'
-            | 'stale'
-            | 'violations'
-            | 'account-settings'
-        );
-      }),
-    []
-  );
-
-  const onNavigate = setActiveView as (view: string) => void;
+  const activeLabel = VIEW_LABELS[activeView]();
 
   useEffect(() => {
     const updateHeight = (): void => {
@@ -270,6 +130,9 @@ export function Overview(): JSX.Element {
     }
   }, [user]);
 
+  if (viewNotAvailable) {
+    return <NotAvailable />;
+  }
   return (
     <div
       className={`ui-app-shell isolate min-h-screen print:min-h-0 bg-background print:bg-transparent text-foreground ui-shell-glass${sidebarCollapsed ? ' ui-shell-collapsed' : ''}`}
@@ -297,13 +160,13 @@ export function Overview(): JSX.Element {
                 className="h-7 w-7 object-contain flex-shrink-0"
               />
               <span className="truncate text-base font-bold tracking-tight text-shell-foreground hover:opacity-80 transition-opacity">
-                GameRank Tracker
+                {i18n.word("'GameRank Tracker'")}
               </span>
             </a>
           </div>
           <button
             type="button"
-            aria-label="Toggle sidebar"
+            aria-label={i18n.chrome.toggleSidebar}
             aria-pressed={sidebarCollapsed}
             data-ls="97f4e9a883"
             className="h-8 w-8 flex flex-shrink-0 items-center justify-center rounded-md hover:bg-shell-foreground/10 transition-colors text-shell-foreground"
@@ -311,7 +174,7 @@ export function Overview(): JSX.Element {
               const next = !sidebarCollapsed;
               setSidebarCollapsed(next);
               try {
-                localStorage.setItem('lightscale.sidebarCollapsed', String(next));
+                writeStoredValue('lightscale.sidebarCollapsed', next);
               } catch {
                 /* Empty by design */
               }
@@ -337,7 +200,7 @@ export function Overview(): JSX.Element {
                 }}
               >
                 <FolderIcon className="shrink-0 h-4 w-4" />
-                <span className="break-words truncate">{'Dashboard'}</span>
+                <span className="truncate min-w-0">{i18n.chrome.dashboard}</span>
               </button>
               {(permissions?.['leaderboards']?.read ?? false) ||
               (permissions?.['leaderboards']?.create ?? false) ? (
@@ -351,7 +214,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <TrophyIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Leaderboards'}</span>
+                  <span className="truncate min-w-0">{i18n.word('leaderboards')}</span>
                 </button>
               ) : null}
               {(permissions?.['matches']?.read ?? false) ||
@@ -366,7 +229,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <SwordsIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Matches'}</span>
+                  <span className="truncate min-w-0">{i18n.word('matches')}</span>
                 </button>
               ) : null}
               {(permissions?.['games']?.read ?? false) ||
@@ -381,7 +244,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <DicesIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Games'}</span>
+                  <span className="truncate min-w-0">{i18n.word('games')}</span>
                 </button>
               ) : null}
               {(permissions?.['players']?.read ?? false) ||
@@ -396,7 +259,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <UserIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Players'}</span>
+                  <span className="truncate min-w-0">{i18n.word('players')}</span>
                 </button>
               ) : null}
               <button
@@ -409,14 +272,14 @@ export function Overview(): JSX.Element {
                 }}
               >
                 <SparklesIcon className="shrink-0 h-4 w-4" />
-                <span className="break-words truncate">{'Leaderboards by Game'}</span>
+                <span className="truncate min-w-0">{i18n.word('gameLeaderboards')}</span>
               </button>
             </div>
           </div>
           {userRoles.includes('admin') ? (
             <div className="flex flex-col gap-1 p-2 w-full" data-ls="f10d5a605a">
-              <span className="break-words text-xs font-medium uppercase tracking-wide px-2 text-shell-foreground/50">
-                {'Admin'}
+              <span className="min-w-min text-xs font-medium uppercase tracking-wide px-2 text-shell-foreground/50">
+                {i18n.chrome.admin}
               </span>
               <div className="flex flex-col gap-1 w-full">
                 <button
@@ -429,7 +292,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <UsersIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Users'}</span>
+                  <span className="truncate min-w-0">{i18n.chrome.users}</span>
                 </button>
                 <button
                   type="button"
@@ -441,7 +304,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <ShieldCheckIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Access'}</span>
+                  <span className="truncate min-w-0">{i18n.chrome.accessTitle}</span>
                 </button>
                 <button
                   type="button"
@@ -453,7 +316,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <LockIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Roles'}</span>
+                  <span className="truncate min-w-0">{i18n.chrome.rolePermissionsTab}</span>
                 </button>
                 <button
                   type="button"
@@ -465,7 +328,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <ShieldCheckIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Data Protection'}</span>
+                  <span className="truncate min-w-0">{i18n.chrome.dataProtectionTab}</span>
                 </button>
                 <button
                   type="button"
@@ -477,7 +340,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <WorkflowIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Automations'}</span>
+                  <span className="truncate min-w-0">{i18n.chrome.automationTitle}</span>
                 </button>
                 <button
                   type="button"
@@ -489,7 +352,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <ArchiveIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Stale data'}</span>
+                  <span className="truncate min-w-0">{i18n.chrome.staleDataTitle}</span>
                 </button>
                 <button
                   type="button"
@@ -501,7 +364,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <ShieldAlertIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Rule violations'}</span>
+                  <span className="truncate min-w-0">{i18n.chrome.ruleViolationsTitle}</span>
                 </button>
               </div>
             </div>
@@ -511,7 +374,7 @@ export function Overview(): JSX.Element {
 
       <header
         ref={headerRef}
-        className="ui-topbar fixed inset-x-0 top-0 z-50 md:left-[var(--app-sidebar-w)] md:transition-[left] md:duration-200 md:ease-in-out bg-shell text-shell-foreground border-b border-shell-foreground/15 print:hidden"
+        className="ui-topbar ui-viewport-bar fixed inset-x-0 top-0 z-50 md:left-[var(--app-sidebar-w)] md:transition-[left] md:duration-200 md:ease-in-out bg-shell text-shell-foreground border-b border-shell-foreground/15 print:hidden"
       >
         <div className="h-16 flex items-center justify-between gap-1 px-4 sm:gap-2 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -524,7 +387,10 @@ export function Overview(): JSX.Element {
             >
               {isMobileMenuOpen ? <XIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
             </button>
-            <h1 className="text-base font-semibold tracking-tight whitespace-normal [overflow-wrap:anywhere] min-w-0">
+            <h1
+              className="min-w-0 truncate text-base font-semibold tracking-tight"
+              title={activeLabel}
+            >
               {activeLabel}
             </h1>
           </div>
@@ -532,7 +398,7 @@ export function Overview(): JSX.Element {
           <div className="flex items-center gap-1 sm:gap-2 lg:gap-3 flex-shrink-0">
             <button
               type="button"
-              aria-label="Toggle theme"
+              aria-label={i18n.chrome.toggleTheme}
               className="h-9 w-9 p-0 flex-shrink-0 flex items-center justify-center rounded-md border border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
               onClick={() => {
                 const isDarkMode = document.documentElement.classList.toggle('dark');
@@ -550,7 +416,7 @@ export function Overview(): JSX.Element {
                       type="button"
                       variant="outline"
                       className="h-9 w-9 p-0 rounded-md flex-shrink-0"
-                      aria-label="Admin"
+                      aria-label={i18n.chrome.admin}
                       data-ls="48b4cfbe9f"
                     >
                       <ShieldCheckIcon className="h-4 w-4" />
@@ -561,7 +427,7 @@ export function Overview(): JSX.Element {
                     className="w-56 rounded-lg shadow-lg"
                     data-ls="9e723588d2"
                   >
-                    <DropdownMenuLabel>Admin</DropdownMenuLabel>
+                    <DropdownMenuLabel>{i18n.chrome.admin}</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="px-4 py-2.5 focus:bg-accent focus:text-accent-foreground"
@@ -571,7 +437,7 @@ export function Overview(): JSX.Element {
                       data-ls="ce11e2cab5"
                     >
                       <UsersIcon className="h-4 w-4" />
-                      <span>Users</span>
+                      <span>{i18n.chrome.users}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="px-4 py-2.5 focus:bg-accent focus:text-accent-foreground"
@@ -581,7 +447,7 @@ export function Overview(): JSX.Element {
                       data-ls="a48ae0c7d7"
                     >
                       <ShieldCheckIcon className="h-4 w-4" />
-                      <span>Access</span>
+                      <span>{i18n.chrome.accessTitle}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="px-4 py-2.5 focus:bg-accent focus:text-accent-foreground"
@@ -591,7 +457,7 @@ export function Overview(): JSX.Element {
                       data-ls="a3c02a1dbd"
                     >
                       <LockIcon className="h-4 w-4" />
-                      <span>Roles</span>
+                      <span>{i18n.chrome.rolePermissionsTab}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="px-4 py-2.5 focus:bg-accent focus:text-accent-foreground"
@@ -601,7 +467,7 @@ export function Overview(): JSX.Element {
                       data-ls="142fa11834"
                     >
                       <ShieldCheckIcon className="h-4 w-4" />
-                      <span>Data Protection</span>
+                      <span>{i18n.chrome.dataProtectionTab}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="px-4 py-2.5 focus:bg-accent focus:text-accent-foreground"
@@ -611,7 +477,7 @@ export function Overview(): JSX.Element {
                       data-ls="6ee8b28d7d"
                     >
                       <WorkflowIcon className="h-4 w-4" />
-                      <span>Automations</span>
+                      <span>{i18n.chrome.automationTitle}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="px-4 py-2.5 focus:bg-accent focus:text-accent-foreground"
@@ -621,7 +487,7 @@ export function Overview(): JSX.Element {
                       data-ls="167db068d0"
                     >
                       <ArchiveIcon className="h-4 w-4" />
-                      <span>Stale data</span>
+                      <span>{i18n.chrome.staleDataTitle}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="px-4 py-2.5 focus:bg-accent focus:text-accent-foreground"
@@ -631,7 +497,7 @@ export function Overview(): JSX.Element {
                       data-ls="f81858e94b"
                     >
                       <ShieldAlertIcon className="h-4 w-4" />
-                      <span>Rule violations</span>
+                      <span>{i18n.chrome.ruleViolationsTitle}</span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -672,7 +538,7 @@ export function Overview(): JSX.Element {
                   data-ls="2e88d9ed3f"
                 >
                   <SettingsIcon className="h-4 w-4" />
-                  <span>Settings</span>
+                  <span>{i18n.chrome.settings}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -687,7 +553,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <LogOutIcon className="h-4 w-4" />
-                  <span>Sign out</span>
+                  <span>{i18n.chrome.signOut}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -715,7 +581,7 @@ export function Overview(): JSX.Element {
                   className="h-7 w-7 object-contain flex-shrink-0"
                 />
                 <span className="truncate text-base font-bold tracking-tight text-shell-foreground hover:opacity-80 transition-opacity">
-                  GameRank Tracker
+                  {i18n.word("'GameRank Tracker'")}
                 </span>
               </a>
             </div>
@@ -735,7 +601,7 @@ export function Overview(): JSX.Element {
                 }}
               >
                 <FolderIcon className="shrink-0 h-4 w-4" />
-                <span className="break-words truncate">{'Dashboard'}</span>
+                <span className="truncate min-w-0">{i18n.chrome.dashboard}</span>
               </button>
               {(permissions?.['leaderboards']?.read ?? false) ||
               (permissions?.['leaderboards']?.create ?? false) ? (
@@ -749,7 +615,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <TrophyIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Leaderboards'}</span>
+                  <span className="truncate min-w-0">{i18n.word('leaderboards')}</span>
                 </button>
               ) : null}
               {(permissions?.['matches']?.read ?? false) ||
@@ -764,7 +630,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <SwordsIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Matches'}</span>
+                  <span className="truncate min-w-0">{i18n.word('matches')}</span>
                 </button>
               ) : null}
               {(permissions?.['games']?.read ?? false) ||
@@ -779,7 +645,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <DicesIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Games'}</span>
+                  <span className="truncate min-w-0">{i18n.word('games')}</span>
                 </button>
               ) : null}
               {(permissions?.['players']?.read ?? false) ||
@@ -794,7 +660,7 @@ export function Overview(): JSX.Element {
                   }}
                 >
                   <UserIcon className="shrink-0 h-4 w-4" />
-                  <span className="break-words truncate">{'Players'}</span>
+                  <span className="truncate min-w-0">{i18n.word('players')}</span>
                 </button>
               ) : null}
               <button
@@ -807,7 +673,7 @@ export function Overview(): JSX.Element {
                 }}
               >
                 <SparklesIcon className="shrink-0 h-4 w-4" />
-                <span className="break-words truncate">{'Leaderboards by Game'}</span>
+                <span className="truncate min-w-0">{i18n.word('gameLeaderboards')}</span>
               </button>
             </nav>
           </div>
@@ -818,7 +684,7 @@ export function Overview(): JSX.Element {
         className="ui-app-main md:pl-[var(--app-sidebar-w)] md:transition-[padding-left] md:duration-200 md:ease-in-out print:pl-0"
         style={{ paddingTop: `${headerHeight}px` }}
         data-ls-page="app"
-        data-ls-home={activeView === 'dashboard' ? '' : undefined}
+        data-ls-home={activeView === homeView ? '' : undefined}
       >
         {activeView === 'dashboard' ? (
           <div className="grid grid-cols-[minmax(0,1fr)] h-[calc(100vh-4rem)]">
@@ -865,92 +731,7 @@ export function Overview(): JSX.Element {
             <RuleViolationsView onNavigate={onNavigate} />
           </div>
         ) : null}
-
-        {activeView === 'account-settings' && (
-          <div className="px-6 lg:px-8 xl:px-10 2xl:px-12 py-6 lg:py-8 xl:py-10">
-            <Tabs
-              value={activeSettingsTab}
-              onValueChange={(value) => {
-                setActiveSettingsTab(
-                  value as 'password' | 'passkeys' | '2fa' | 'privacy' | 'account'
-                );
-              }}
-              orientation="vertical"
-              className="grid grid-cols-1 lg:grid-cols-[260px_1fr] xl:grid-cols-[280px_1fr] gap-6 lg:gap-8 xl:gap-10"
-            >
-              <aside className="lg:sticky lg:top-14 lg:h-fit">
-                <div className="border-b lg:border-b-0 lg:border-r border-border pb-4 lg:pb-0 lg:pr-6 xl:pr-8">
-                  <p className="text-sm text-muted-foreground mb-6 lg:mb-8">
-                    Manage account security features.
-                  </p>
-                  <TabsList className="flex lg:flex-col gap-1.5 bg-transparent p-0 h-auto max-lg:overflow-x-auto max-lg:-mx-4 max-lg:px-4">
-                    <TabsTrigger
-                      value="password"
-                      className="shrink-0 whitespace-nowrap lg:w-full justify-start gap-2 px-3 lg:px-4 h-10 rounded-md text-sm font-medium text-muted-foreground hover:text-accent-foreground hover:bg-accent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                    >
-                      <LockIcon className="h-4 w-4" />
-                      Password
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="passkeys"
-                      className="shrink-0 whitespace-nowrap lg:w-full justify-start gap-2 px-3 lg:px-4 h-10 rounded-md text-sm font-medium text-muted-foreground hover:text-accent-foreground hover:bg-accent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                    >
-                      <KeyRoundIcon className="h-4 w-4" />
-                      Passkeys
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="2fa"
-                      className="shrink-0 whitespace-nowrap lg:w-full justify-start gap-2 px-3 lg:px-4 h-10 rounded-md text-sm font-medium text-muted-foreground hover:text-accent-foreground hover:bg-accent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                    >
-                      <ShieldCheckIcon className="h-4 w-4" />
-                      Two-factor (2FA)
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="privacy"
-                      className="shrink-0 whitespace-nowrap lg:w-full justify-start gap-2 px-3 lg:px-4 h-10 rounded-md text-sm font-medium text-muted-foreground hover:text-accent-foreground hover:bg-accent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                    >
-                      <ShieldCheckIcon className="h-4 w-4" />
-                      Privacy
-                    </TabsTrigger>
-                    {canDeleteAccount && (
-                      <TabsTrigger
-                        value="account"
-                        className="shrink-0 whitespace-nowrap lg:w-full justify-start gap-2 px-3 lg:px-4 h-10 rounded-md text-sm font-medium text-muted-foreground hover:text-accent-foreground hover:bg-accent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                      >
-                        <Trash2Icon className="h-4 w-4" />
-                        Delete account
-                      </TabsTrigger>
-                    )}
-                  </TabsList>
-                </div>
-              </aside>
-
-              <section>
-                <div>
-                  <div className="border border-border bg-card p-6 lg:p-8 xl:p-10 rounded-lg">
-                    <TabsContent value="password">
-                      <ChangePasswordSettings />
-                    </TabsContent>
-                    <TabsContent value="passkeys">
-                      <PasskeySettings />
-                    </TabsContent>
-                    <TabsContent value="2fa">
-                      <TwoFactorSettings />
-                    </TabsContent>
-                    <TabsContent value="privacy">
-                      <PrivacySettings canRequestErasure={true} />
-                    </TabsContent>
-                    {canDeleteAccount && (
-                      <TabsContent value="account">
-                        <DeleteAccountSettings />
-                      </TabsContent>
-                    )}
-                  </div>
-                </div>
-              </section>
-            </Tabs>
-          </div>
-        )}
+        {activeView === 'account-settings' ? <AccountSettings /> : null}
       </main>
     </div>
   );

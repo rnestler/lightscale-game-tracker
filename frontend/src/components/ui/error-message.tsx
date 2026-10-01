@@ -1,3 +1,4 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 
 interface ErrorMessageProps {
@@ -5,7 +6,10 @@ interface ErrorMessageProps {
   title?: string;
 }
 
-export function ErrorMessage({ message, title = 'Error' }: ErrorMessageProps): JSX.Element {
+export function ErrorMessage({
+  message,
+  title = i18n.chrome.errorTitle,
+}: ErrorMessageProps): JSX.Element {
   return (
     <div
       role="alert"

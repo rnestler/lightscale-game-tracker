@@ -1,7 +1,8 @@
 import { authClient } from './authClient.js';
 import { apiBaseUrl } from '../config/apiConfig.js';
+import { returnAfterSignIn } from '../utils/recordNavigation.js';
 
-type SocialProvider = 'google' | 'apple' | 'microsoft';
+type SocialProvider = 'google' | 'microsoft';
 
 const POPUP_WIDTH = 500;
 const POPUP_HEIGHT = 600;
@@ -105,7 +106,7 @@ function watchPopup(popup: Window): void {
 }
 
 export function startSocialSignIn(provider: SocialProvider): void {
-  const callbackURL = `${window.location.origin}/app`;
+  const callbackURL = `${window.location.origin}${returnAfterSignIn()}`;
   const isInIframe = window !== window.top;
 
   if (!isInIframe) {
@@ -115,9 +116,10 @@ export function startSocialSignIn(provider: SocialProvider): void {
     return;
   }
 
-  const popupCallbackURL = `${callbackURL}?oauth_popup=1`;
+  const popupCallbackURL = new URL(callbackURL);
+  popupCallbackURL.searchParams.set('oauth_popup', '1');
   authClient.signIn
-    .social({ provider, callbackURL: popupCallbackURL, disableRedirect: true })
+    .social({ provider, callbackURL: popupCallbackURL.toString(), disableRedirect: true })
     .then((result) => {
       const oauthUrl = result.data?.url;
       if (!oauthUrl) {

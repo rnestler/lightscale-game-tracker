@@ -1,12 +1,17 @@
-import type { JSX } from 'react';
-import { useState } from 'react';
-import type * as $Domain from '../types/domain';
-import { usePermissions, canUpdateField, canCreateField } from '../hooks/usePermissions';
+import { i18n } from '../i18n/text';
+import { useState, type JSX } from 'react';
 import { usePlayers } from '../hooks/usePlayers';
+import { useAvailability } from '../hooks/useAvailability';
+import { Input } from './ui/input';
+import { FormField, FormDatePicker, FormRichTextEditor, FormUserSelect } from './ui/form-field';
+import { FileUpload } from './ui/file-upload';
+import type { FileUploadValue, FileValue } from '../types/file';
+import { usePermissions } from '../hooks/usePermissions';
+import { refusalFieldErrors, runWithToast } from '../utils/errorHandling';
+import type * as $Domain from '../types/domain';
+import { Loader2Icon } from 'lucide-react';
+import { apiBaseUrl } from '../config/apiConfig';
 import { toast } from '../utils/toast';
-
-import { getErrorMessage, refusalFieldErrors, runWithToast } from '../utils/errorHandling';
-import { textValue } from '../utils/recordValues';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -16,16 +21,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  focusFirstField,
 } from './ui/dialog';
-import { Input } from './ui/input';
-import { FormField, FormUserSelect, FormDatePicker, FormRichTextEditor } from './ui/form-field';
-import { FileUpload } from './ui/file-upload';
-import { apiBaseUrl } from '../config/apiConfig';
-import type { FileUploadValue, FileValue } from '../types/file';
-import { useAvailability } from '../hooks/useAvailability';
-import { ErrorMessage } from './ui/error-message';
-import { Loader2Icon } from 'lucide-react';
-
+type FormErrors = Partial<Record<string, string>>;
 export interface PlayerDraft extends Omit<$Domain.Player, 'avatar'> {
   avatar: FileUploadValue | FileValue | null;
 }
@@ -55,8 +53,6 @@ interface PlayerEditDialogProps {
   }) => Promise<{ id: string } | void>;
 }
 
-type FormErrors = Partial<Record<string, string>>;
-
 export function PlayerEditDialog({
   open,
   editing,
@@ -67,92 +63,108 @@ export function PlayerEditDialog({
   defaults = {},
 }: PlayerEditDialogProps): JSX.Element {
   const { permissions } = usePermissions();
-  const playersHook = usePlayers({ autoLoad: false });
-  const [nickname$, setNickname$] = useState('');
-  const [fullName$, setFullName$] = useState('');
-  const [emailAddress$, setEmailAddress$] = useState('');
-  const [joinedDate$, setJoinedDate$] = useState(new Date().toISOString().split('T')[0]);
-  const [avatar$, setAvatar$] = useState<FileUploadValue | FileValue | null>(null);
-  const [userAccount$, setUserAccount$] = useState('');
-  const [bio$, setBio$] = useState('');
+  const { reloadPlayers, createPlayer, updatePlayer } = usePlayers({ autoLoad: false });
+  const canSubmitEditPlayer = editing
+    ? (permissions?.['players']?.update ?? false)
+    : (permissions?.['players']?.create ?? false);
+  const [editPlayerNickname$, setEditPlayerNickname$] = useState(defaults.nickname ?? '');
+  const [editPlayerFullName$, setEditPlayerFullName$] = useState(defaults.fullName ?? '');
+  const [editPlayerEmailAddress$, setEditPlayerEmailAddress$] = useState(
+    defaults.emailAddress ?? ''
+  );
+  const [editPlayerJoinedDate$, setEditPlayerJoinedDate$] = useState(
+    defaults.joinedDate ?? new Date().toISOString().split('T')[0]
+  );
+  const [editPlayerAvatar$, setEditPlayerAvatar$] = useState<FileUploadValue | FileValue | null>(
+    null
+  );
+  const [editPlayerUserAccount$, setEditPlayerUserAccount$] = useState(
+    defaults.userAccountId ?? ''
+  );
+  const [editPlayerBio$, setEditPlayerBio$] = useState(defaults.bio ?? '');
   const availability = useAvailability({
     resource: 'players',
     rules: [['nickname'], ['emailAddress']],
-    values: { nickname: nickname$, emailAddress: emailAddress$ },
+    values: { nickname: editPlayerNickname$, emailAddress: editPlayerEmailAddress$ },
     domains: {},
-    excludeId: editing !== null ? editing.id : null,
+    excludeId: editing?.id ?? null,
   });
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [rootError, setRootError] = useState<string | null>(null);
-  const [seededKey, setSeededKey] = useState<string | null>(null);
-  const seedKey = open ? (editing?.id ?? 'new') : null;
-  if (seededKey !== seedKey) {
-    setSeededKey(seedKey);
-    if (seedKey !== null && editing) {
-      setNickname$(textValue(editing.nickname));
-      setFullName$(textValue(editing.fullName));
-      setEmailAddress$(textValue(editing.emailAddress));
-      setJoinedDate$(textValue(editing.joinedDate));
-      setAvatar$(editing.avatar ?? null);
-      setUserAccount$(textValue(editing.userAccountId));
-      setBio$(textValue(editing.bio));
-      setErrors({});
-      setRootError(null);
-    } else if (seedKey !== null) {
-      setNickname$(defaults.nickname ?? '');
-      setFullName$(defaults.fullName ?? '');
-      setEmailAddress$(defaults.emailAddress ?? '');
-      setJoinedDate$(defaults.joinedDate ?? new Date().toISOString().split('T')[0]);
-      setAvatar$(null);
-      setUserAccount$(defaults.userAccountId ?? '');
-      setBio$(defaults.bio ?? '');
-      setErrors({});
-      setRootError(null);
+  const [editPlayerErrors, setEditPlayerErrors] = useState<FormErrors>({});
+  const [editPlayerSeededId, setEditPlayerSeededId] = useState<string | null>(null);
+  const editPlayerSeedKey = open ? (editing?.id ?? 'new') : null;
+  if (editPlayerSeededId !== editPlayerSeedKey) {
+    setEditPlayerSeededId(editPlayerSeedKey);
+    if (editPlayerSeedKey !== null) {
+      setEditPlayerNickname$(editing ? editing.nickname : (defaults.nickname ?? ''));
+      setEditPlayerFullName$(editing ? editing.fullName : (defaults.fullName ?? ''));
+      setEditPlayerEmailAddress$(editing ? editing.emailAddress : (defaults.emailAddress ?? ''));
+      setEditPlayerJoinedDate$(
+        editing
+          ? editing.joinedDate
+          : (defaults.joinedDate ?? new Date().toISOString().split('T')[0])
+      );
+      setEditPlayerAvatar$(editing ? editing.avatar : null);
+      setEditPlayerUserAccount$(editing ? editing.userAccountId : (defaults.userAccountId ?? ''));
+      setEditPlayerBio$(editing ? editing.bio : (defaults.bio ?? ''));
+      setEditPlayerErrors({});
     }
   }
-  async function submit(): Promise<void> {
+  async function submitEditPlayer(): Promise<void> {
     const newErrors: FormErrors = {};
-    if (!nickname$.trim()) {
-      newErrors.nickname = 'Nickname / Handle is required.';
+    if (!editPlayerNickname$.trim()) {
+      newErrors.nickname = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('Player.nickname'),
+      });
     }
-    if (!fullName$.trim()) {
-      newErrors.fullName = 'Full Name is required.';
+    if (!editPlayerFullName$.trim()) {
+      newErrors.fullName = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('Player.fullName'),
+      });
     }
-    if (!emailAddress$.trim()) {
-      newErrors.emailAddress = 'Email Address is required.';
+    if (!editPlayerEmailAddress$.trim()) {
+      newErrors.emailAddress = i18n.fill(i18n.chrome.fieldRequired, {
+        label: i18n.word('Player.emailAddress'),
+      });
     }
-    if (emailAddress$.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress$.trim())) {
-      newErrors.emailAddress = 'Enter a valid email address.';
+    if (
+      editPlayerEmailAddress$.trim() &&
+      !/^[^\s@,;:<>()[\]"\\]+@[^\s@,;:<>()[\]"\\][^\s@,;:<>()[\]"\\.]*\.[^\s@,;:<>()[\]"\\]+$/.test(
+        editPlayerEmailAddress$.trim()
+      )
+    ) {
+      newErrors.emailAddress = i18n.chrome.invalidEmail;
     }
-    setErrors(newErrors);
+    setEditPlayerErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
       return;
     }
-    const data = {
-      nickname: nickname$,
-      fullName: fullName$,
-      emailAddress: emailAddress$,
-      joinedDate: joinedDate$,
-      avatar: avatar$,
-      userAccountId: userAccount$,
-      bio: bio$,
-    };
     try {
+      const draft = {
+        nickname: editPlayerNickname$,
+        fullName: editPlayerFullName$,
+        emailAddress: editPlayerEmailAddress$,
+        joinedDate: editPlayerJoinedDate$,
+        avatar: editPlayerAvatar$,
+        userAccountId: editPlayerUserAccount$,
+        bio: editPlayerBio$,
+      };
       if (onSave) {
-        await onSave(data);
+        await onSave(draft);
+      } else if (editing) {
+        await updatePlayer({ ...editing, ...draft });
+        toast(i18n.chrome.itemSaved);
       } else {
-        if (editing) {
-          await playersHook.updatePlayer({ id: editing.id, ...data });
-        } else {
-          await playersHook.createPlayer(data);
-        }
-        toast(editing !== null ? 'Changes saved.' : 'Player created.');
-        await playersHook.reloadPlayers();
+        await createPlayer(draft);
+        toast(i18n.fill(i18n.chrome.itemCreated, { name: i18n.word('Player') }));
+      }
+      if (!onSave) {
+        await reloadPlayers();
       }
       if (onSaved) {
         onSaved();
       }
       onClose();
+      setEditPlayerErrors({});
     } catch (error) {
       const fieldErrors = refusalFieldErrors(error, [
         'nickname',
@@ -164,152 +176,157 @@ export function PlayerEditDialog({
         'bio',
       ]);
       if (fieldErrors === null) {
-        setRootError(getErrorMessage(error, 'Save failed'));
-      } else {
-        setErrors(fieldErrors);
+        throw error;
       }
+      setEditPlayerErrors(fieldErrors);
     }
   }
-  const selectedLabel = editing ? 'Edit player' : 'New player';
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{selectedLabel}</DialogTitle>
+          <DialogTitle>
+            {editing
+              ? i18n.fill(i18n.chrome.editLabel, { name: i18n.word('Player') })
+              : i18n.fill(i18n.chrome.newLabel, { name: i18n.word('Player') })}
+          </DialogTitle>
           <DialogDescription>
-            Fill in the player details below. Required fields are marked with an asterisk.
+            {i18n.fill(i18n.chrome.editDescription, { name: i18n.word('Player') })}
           </DialogDescription>
         </DialogHeader>
+        {editing?._sample && (
+          <p role="note" className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+            {i18n.chrome.sampleConversion}
+          </p>
+        )}
         <form
+          ref={focusFirstField}
+          className="flex flex-1 flex-col min-h-0"
           onSubmit={(submitEvent) => {
             submitEvent.preventDefault();
-            runWithToast(submit());
+            submitEvent.stopPropagation();
+            runWithToast(submitEditPlayer());
           }}
         >
           <DialogBody>
-            <div data-ls="8fe1657654" className="space-y-6">
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'players',
-                  'nickname'
-                ) && (
-                  <FormField
-                    data-ls="833b0774cd"
-                    label="Nickname / Handle"
-                    required
-                    error={
-                      availability.taken('nickname').includes(nickname$)
-                        ? 'Already in use'
-                        : errors.nickname
-                    }
-                  >
-                    <Input
-                      type="text"
-                      value={nickname$}
-                      onChange={(e) => {
-                        setNickname$(e.target.value);
-                      }}
-                      disabled={availability.locked('nickname')}
-                      onFocus={() => {
-                        availability.refresh();
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'players',
-                  'fullName'
-                ) && (
-                  <FormField
-                    data-ls="3f46c2bd82"
-                    label="Full Name"
-                    required
-                    error={errors.fullName}
-                  >
-                    <Input
-                      type="text"
-                      value={fullName$}
-                      onChange={(e) => {
-                        setFullName$(e.target.value);
-                      }}
-                      autoComplete="off"
-                    />
-                  </FormField>
-                )}
-              </div>
-              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'players',
-                  'emailAddress'
-                ) && (
-                  <FormField
-                    data-ls="124b71a128"
-                    label="Email Address"
-                    required
-                    error={
-                      availability.taken('emailAddress').includes(emailAddress$)
-                        ? 'Already in use'
-                        : errors.emailAddress
-                    }
-                  >
-                    <Input
-                      type="email"
-                      value={emailAddress$}
-                      onChange={(e) => {
-                        setEmailAddress$(e.target.value);
-                      }}
-                      disabled={availability.locked('emailAddress')}
-                      onFocus={() => {
-                        availability.refresh();
-                      }}
-                      autoComplete="email"
-                      placeholder="name@example.com"
-                    />
-                  </FormField>
-                )}
-                {(editing ? canUpdateField : canCreateField)(
-                  permissions,
-                  'players',
-                  'joinedDate'
-                ) && (
-                  <FormField data-ls="fc8585c3fb" label="Member Since" error={errors.joinedDate}>
-                    <FormDatePicker value={joinedDate$} onChange={setJoinedDate$} />
-                  </FormField>
-                )}
-              </div>
-              {(editing ? canUpdateField : canCreateField)(permissions, 'players', 'avatar') && (
-                <FormField data-ls="44b81543c7" label="Avatar" error={errors.avatar}>
-                  <FileUpload
-                    value={avatar$ !== null && 'data' in avatar$ ? avatar$ : null}
-                    existingFile={avatar$ !== null && 'id' in avatar$ ? avatar$ : null}
-                    existingFileUrl={
-                      avatar$ !== null && 'id' in avatar$
-                        ? `${apiBaseUrl}/api/files/${avatar$.id}/download?v=${encodeURIComponent(avatar$.fileName)}`
-                        : null
-                    }
-                    onChange={setAvatar$}
+            <div className="@container flex flex-col gap-6" data-ls="8fe1657654">
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+                <FormField
+                  data-ls="833b0774cd"
+                  label={i18n.word('Player.nickname')}
+                  required
+                  error={
+                    availability.taken('nickname').includes(editPlayerNickname$)
+                      ? i18n.chrome.valueTaken
+                      : editPlayerErrors.nickname
+                  }
+                >
+                  <Input
+                    type="text"
+                    value={editPlayerNickname$}
+                    onChange={(e) => {
+                      setEditPlayerNickname$(e.target.value);
+                    }}
+                    disabled={availability.locked('nickname')}
+                    onFocus={() => {
+                      availability.refresh();
+                    }}
+                    autoComplete="off"
                   />
                 </FormField>
-              )}
-              {(editing ? canUpdateField : canCreateField)(
-                permissions,
-                'players',
-                'userAccountId'
-              ) && (
-                <FormField data-ls="9d1deffbff" label="Linked User" error={errors.userAccount}>
-                  <FormUserSelect value={userAccount$} onChange={setUserAccount$} />
+                <FormField
+                  data-ls="3f46c2bd82"
+                  label={i18n.word('Player.fullName')}
+                  required
+                  error={editPlayerErrors.fullName}
+                >
+                  <Input
+                    type="text"
+                    value={editPlayerFullName$}
+                    onChange={(e) => {
+                      setEditPlayerFullName$(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
                 </FormField>
-              )}
-              {(editing ? canUpdateField : canCreateField)(permissions, 'players', 'bio') && (
-                <FormField data-ls="88964fb456" label="Player Bio" error={errors.bio}>
-                  <FormRichTextEditor value={bio$} onChange={setBio$} />
+              </div>
+              <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+                <FormField
+                  data-ls="124b71a128"
+                  label={i18n.word('Player.emailAddress')}
+                  required
+                  error={
+                    availability.taken('emailAddress').includes(editPlayerEmailAddress$)
+                      ? i18n.chrome.valueTaken
+                      : editPlayerErrors.emailAddress
+                  }
+                >
+                  <Input
+                    type="email"
+                    value={editPlayerEmailAddress$}
+                    onChange={(e) => {
+                      setEditPlayerEmailAddress$(e.target.value);
+                    }}
+                    disabled={availability.locked('emailAddress')}
+                    onFocus={() => {
+                      availability.refresh();
+                    }}
+                    autoComplete="email"
+                    placeholder={i18n.chrome.emailPlaceholder}
+                  />
                 </FormField>
-              )}
-              {rootError !== null && <ErrorMessage message={rootError} />}
+                <FormField
+                  data-ls="fc8585c3fb"
+                  label={i18n.word('Player.joinedDate')}
+                  error={editPlayerErrors.joinedDate}
+                >
+                  <FormDatePicker
+                    value={editPlayerJoinedDate$}
+                    onChange={setEditPlayerJoinedDate$}
+                  />
+                </FormField>
+              </div>
+              <FormField
+                data-ls="44b81543c7"
+                label={i18n.word('Player.avatar')}
+                error={editPlayerErrors.avatar}
+              >
+                <FileUpload
+                  value={
+                    editPlayerAvatar$ !== null && 'data' in editPlayerAvatar$
+                      ? editPlayerAvatar$
+                      : null
+                  }
+                  existingFile={
+                    editPlayerAvatar$ !== null && 'id' in editPlayerAvatar$
+                      ? editPlayerAvatar$
+                      : null
+                  }
+                  existingFileUrl={
+                    editPlayerAvatar$ !== null && 'id' in editPlayerAvatar$
+                      ? `${apiBaseUrl}/api/files/${editPlayerAvatar$.id}/download?v=${encodeURIComponent(editPlayerAvatar$.fileName)}`
+                      : null
+                  }
+                  onChange={setEditPlayerAvatar$}
+                />
+              </FormField>
+              <FormField
+                data-ls="9d1deffbff"
+                label={i18n.word('Player.userAccount')}
+                error={editPlayerErrors.userAccount}
+              >
+                <FormUserSelect
+                  value={editPlayerUserAccount$}
+                  onChange={setEditPlayerUserAccount$}
+                />
+              </FormField>
+              <FormField
+                data-ls="88964fb456"
+                label={i18n.word('Player.bio')}
+                error={editPlayerErrors.bio}
+              >
+                <FormRichTextEditor value={editPlayerBio$} onChange={setEditPlayerBio$} />
+              </FormField>
             </div>
           </DialogBody>
           <DialogFooter>
@@ -319,26 +336,30 @@ export function PlayerEditDialog({
               onClick={onClose}
               className="rounded-md h-10 px-4 text-sm"
             >
-              Cancel
+              {i18n.chrome.cancel}
             </Button>
-            <Button
-              type="submit"
-              data-ls="0dde2b78c9"
-              variant="default"
-              disabled={isBusy}
-              className="rounded-md shadow-sm h-10 px-4 text-sm"
-            >
-              {isBusy ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2Icon className="h-4 w-4 animate-spin" />
-                  {'Saving...'}
-                </span>
-              ) : editing ? (
-                'Save changes'
-              ) : (
-                'Create player'
-              )}
-            </Button>
+            {canSubmitEditPlayer && (
+              <Button
+                type="submit"
+                data-ls="0dde2b78c9"
+                variant="default"
+                disabled={isBusy}
+                className="rounded-md shadow-sm h-10 px-4 text-sm"
+              >
+                {isBusy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2Icon className="h-4 w-4 animate-spin" />
+                    {i18n.chrome.savingIndicator}
+                  </span>
+                ) : editing?._sample ? (
+                  i18n.chrome.saveAsNormalRecord
+                ) : editing ? (
+                  i18n.chrome.saveChanges
+                ) : (
+                  i18n.fill(i18n.chrome.createItem, { name: i18n.word('Player') })
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

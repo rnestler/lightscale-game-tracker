@@ -11,8 +11,6 @@ import {
 } from '../pagination.js';
 import {
   getEffectiveUserRoles,
-  isAdmin,
-  hasAnyRole,
   hasGrant,
   admissionClause,
   ownedColumn,
@@ -22,9 +20,9 @@ import {
   projectRows,
   projectRow,
   projectReadableFields,
+  readColumns,
   writtenColumns,
   queryableFieldSet,
-  readableFieldSet,
   readableFieldSetAllScope,
   unwritableField,
   ownedFlag,
@@ -35,6 +33,9 @@ import {
 } from '../authorization.js';
 import { withTransaction } from '../transaction.js';
 import { auth } from '../auth.js';
+import { nothingStored, storedColumns, unreadableReference } from '../reference-access.js';
+import { unreadableFile } from '../file-access.js';
+import { hiddenCollision, shadowRecord } from '../identity-collision.js';
 import {
   stageFiles,
   storeStagedFiles,
@@ -43,9 +44,14 @@ import {
   isFileBodyValue,
   type FileBodyValue,
 } from '../files.js';
-import { isEmailText, isBlankOrDateText } from '../validation.js';
+import { isBlankOrDateText } from '../validation.js';
 import { assignedColumns, mergedCandidate, storedTemporal } from '../record-writes.js';
-import { enforcePlayerConstraints } from '../constraints.js';
+import {
+  enforcePlayerConstraints,
+  ConstraintViolationError,
+  formattedRow,
+  formatFields,
+} from '../constraints.js';
 import { collectVisibleRuleViolations } from '../rule-violations.js';
 import {
   type AvailabilityTable,
@@ -63,13 +69,13 @@ function getSession(request: Request): ReturnType<typeof auth.api.getSession> {
 
 interface Body {
   [key: string]: unknown;
-  nickname: string;
-  fullName: string;
-  emailAddress: string;
-  avatar: FileBodyValue;
-  bio: string;
-  joinedDate: string;
-  userAccountId: string;
+  nickname?: string;
+  fullName?: string;
+  emailAddress?: string;
+  avatar?: FileBodyValue;
+  bio?: string;
+  joinedDate?: string;
+  userAccountId?: string;
 }
 
 function isBody(value: unknown): value is Body {
@@ -77,25 +83,29 @@ function isBody(value: unknown): value is Body {
     return false;
   }
   const body = value as Record<string, unknown>;
-  if (!(typeof body['nickname'] === 'string')) {
+  if (!(body['nickname'] === undefined || typeof body['nickname'] === 'string')) {
     return false;
   }
-  if (!(typeof body['fullName'] === 'string')) {
+  if (!(body['fullName'] === undefined || typeof body['fullName'] === 'string')) {
     return false;
   }
-  if (!isEmailText(body['emailAddress'])) {
+  if (!(body['emailAddress'] === undefined || typeof body['emailAddress'] === 'string')) {
     return false;
   }
-  if (!isFileBodyValue(body['avatar'])) {
+  if (!(body['avatar'] === undefined || isFileBodyValue(body['avatar']))) {
     return false;
   }
-  if (!(typeof body['bio'] === 'string')) {
+  if (!(body['bio'] === undefined || typeof body['bio'] === 'string')) {
     return false;
   }
-  if (!(body['joinedDate'] === '' || isBlankOrDateText(body['joinedDate']))) {
+  if (!(
+    body['joinedDate'] === undefined ||
+    body['joinedDate'] === '' ||
+    isBlankOrDateText(body['joinedDate'])
+  )) {
     return false;
   }
-  if (!(typeof body['userAccountId'] === 'string')) {
+  if (!(body['userAccountId'] === undefined || typeof body['userAccountId'] === 'string')) {
     return false;
   }
   return true;
@@ -123,7 +133,7 @@ function isUpdateBody(value: unknown): value is UpdateBody {
   if (!(body['fullName'] === undefined || typeof body['fullName'] === 'string')) {
     return false;
   }
-  if (!(body['emailAddress'] === undefined || isEmailText(body['emailAddress']))) {
+  if (!(body['emailAddress'] === undefined || typeof body['emailAddress'] === 'string')) {
     return false;
   }
   if (!(body['avatar'] === undefined || isFileBodyValue(body['avatar']))) {
@@ -244,6 +254,10 @@ playersRouter.post('/multi-get', async (request, response) => {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
+  if (body.ids.length > 200) {
+    response.status(400).json({ error: 'ids must list at most 200 records' });
+    return;
+  }
   if (body.ids.length === 0) {
     response.json([]);
     return;
@@ -287,14 +301,45 @@ playersRouter.get('/:id', async (request, response) => {
 
 async function createPlayerRecord(
   response: RefusalAnswer,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  owner: string,
+  caller: Caller
 ): Promise<Record<string, unknown> | undefined> {
   if (!isBody(body)) {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
-  const typedBody: Body = body;
+  const typedBody: Body = formattedRow('Player', {
+    ...body,
+    nickname: body.nickname ?? '',
+    fullName: body.fullName ?? '',
+    emailAddress: body.emailAddress ?? '',
+    avatar: body.avatar ?? null,
+    bio: body.bio ?? '',
+    joinedDate:
+      body.joinedDate === undefined || body.joinedDate === ''
+        ? new Date().toISOString().slice(0, 10)
+        : body.joinedDate,
+    userAccountId: body.userAccountId ?? '',
+  });
+  const unreadableField = await unreadableReference(
+    [typedBody],
+    [{ field: 'userAccountId', table: 'user' }],
+    caller,
+    nothingStored
+  );
+  if (unreadableField !== null) {
+    throw new ConstraintViolationError({
+      kind: 'referenceGone',
+      type: 'Player',
+      field: unreadableField,
+    });
+  }
   const stagedFiles: StagedFile[] = [];
+  if (await unreadableFile(typedBody, ['avatar'], caller, nothingStored)) {
+    response.status(404).json({ error: 'File not found' });
+    return;
+  }
   stageFiles(typedBody, ['avatar'], stagedFiles);
   enforcePlayerConstraints(typedBody);
   const id = crypto.randomUUID();
@@ -311,12 +356,14 @@ async function createPlayerRecord(
           typedBody.emailAddress,
           typedBody.avatar,
           typedBody.bio,
-          typedBody.joinedDate === ''
-            ? new Date().toISOString().slice(0, 10)
-            : typedBody.joinedDate,
+          storedTemporal(typedBody.joinedDate),
           typedBody.userAccountId,
         ]
       );
+      await client.query('INSERT INTO "creator_players" ("playerId", "userId") VALUES ($1, $2)', [
+        id,
+        owner,
+      ]);
       return inserted.rows[0];
     }
   );
@@ -330,10 +377,29 @@ playersRouter.post('/', async (request, response) => {
   }
   const body = request.body as Record<string, unknown>;
   if (typeof body['recordId'] === 'string') {
+    const recordValues: unknown[] = [body['recordId']];
+    const recordAdmission = hasGrant('players', 'read', access.roles)
+      ? admissionClause('players', 'read', access, 'f', recordValues)
+      : 'FALSE';
+    const readableRecord = await pool.query(
+      `SELECT 1 FROM "Player" f${whereClause(['f.id = $1', recordAdmission])}`,
+      recordValues
+    );
+    if (readableRecord.rows.length === 0) {
+      response.status(404).json({ error: 'Record not found' });
+      return;
+    }
     response.status(201).json({ success: true });
     return;
   }
-  const createdRow = await createPlayerRecord(response, body);
+  if (await hiddenCollision('Player', 'players', null, access, body)) {
+    const shadow = shadowRecord(body);
+    response
+      .status(201)
+      .json(projectReadableFields(shadow, readColumns('players', access.roles, shadow, false)));
+    return;
+  }
+  const createdRow = await createPlayerRecord(response, body, access.userId ?? '', access);
   if (createdRow === undefined) {
     return;
   }
@@ -353,7 +419,29 @@ playersRouter.put('/:id', async (request, response) => {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
+  formatFields('Player', body);
+  const unreadableField = await unreadableReference(
+    [body],
+    [{ field: 'userAccountId', table: 'user' }],
+    access,
+    () => storedColumns('Player', request.params.id, ['userAccountId'])
+  );
+  if (unreadableField !== null) {
+    throw new ConstraintViolationError({
+      kind: 'referenceGone',
+      type: 'Player',
+      field: unreadableField,
+    });
+  }
   const stagedFiles: StagedFile[] = [];
+  if (
+    await unreadableFile(body, ['avatar'], access, () =>
+      storedColumns('Player', request.params.id, ['avatar'])
+    )
+  ) {
+    response.status(404).json({ error: 'File not found' });
+    return;
+  }
   stageFiles(body, ['avatar'], stagedFiles);
   const outcome = await withTransaction<WriteOutcome>(
     pool,
@@ -427,6 +515,9 @@ playersRouter.delete('/:id', async (request, response) => {
       if (existingItem.rows.length === 0) {
         return 'not-found';
       }
+      await client.query('DELETE FROM "creator_players" WHERE "playerId" = $1', [
+        request.params.id,
+      ]);
       const deleted = await client.query('DELETE FROM "Player" WHERE id = $1', [request.params.id]);
       if (deleted.rowCount !== 1) {
         return 'not-found';
@@ -449,18 +540,17 @@ playersViolationsRouter.get('/', async (request, response) => {
     return;
   }
   const values: unknown[] = [];
+  const owned = ownedColumn('players', 'read', access, 'f', values);
   const admission = admissionClause('players', 'read', access, 'f', values);
   const { rows } = await pool.query<Record<string, unknown>>(
-    `SELECT f.id FROM "Player" f${whereClause([admission])}`,
+    `SELECT f.*, ${owned} FROM "Player" f${whereClause([admission])}`,
     values
   );
-  const visibleIds = rows.map((row) => String(row.id));
   response.json(
     await collectVisibleRuleViolations(
       pool,
       'Player',
-      new Set(visibleIds),
-      readableFieldSet('players', access.roles)
+      admitRows('players', 'read', access.roles, rows)
     )
   );
 });
@@ -498,7 +588,7 @@ const availabilityTable: AvailabilityTable = {
 playersRouter.post('/availability', async (request, response) => {
   const session = await getSession(request);
   const userRoles = session ? await getEffectiveUserRoles(pool, session.user.id) : ['guest'];
-  if (!isAdmin(userRoles) && !hasAnyRole(userRoles, ['scorekeeper'])) {
+  if (!hasGrant('players', 'create', userRoles)) {
     response.status(session ? 403 : 401).json({ error: session ? 'Forbidden' : 'Unauthorized' });
     return;
   }

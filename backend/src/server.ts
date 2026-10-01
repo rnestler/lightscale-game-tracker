@@ -1,8 +1,11 @@
 import express from 'express';
 import cors from 'cors';
-import { authRequestHandler } from './auth.js';
+import { fromNodeHeaders } from 'better-auth/node';
+import { auth, authRequestHandler } from './auth.js';
+import { uploadBodyParser, type SessionProbe } from './request-body.js';
 import { errorRefusal } from './error-refusals.js';
 import { issueSubmissionToken } from './submission-guard.js';
+import { selectRequestLanguage } from './utils/language.js';
 import { mountBuiltFrontend } from './frontend.js';
 import type { BuiltFrontend } from './frontend.js';
 import { adminRouter } from './routes/admin.js';
@@ -138,6 +141,9 @@ function reportUnhandledError(
   response.status(500).json({ error: 'Internal error' });
 }
 
+const hasSession: SessionProbe = async (request) =>
+  (await auth.api.getSession({ headers: fromNodeHeaders(request.headers) })) !== null;
+
 export function createServer(frontend: BuiltFrontend | null): express.Express {
   const app = express();
   const trustProxy = process.env.TRUST_PROXY ?? '';
@@ -145,6 +151,7 @@ export function createServer(frontend: BuiltFrontend | null): express.Express {
     app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
   }
   app.use(setSecurityHeaders);
+  app.use(selectRequestLanguage);
   const corsOrigin = process.env.CORS_ORIGIN ?? '';
   if (corsOrigin !== '') {
     app.use(cors({ credentials: true, origin: corsOrigin }));
@@ -155,11 +162,10 @@ export function createServer(frontend: BuiltFrontend | null): express.Express {
   if (frontend !== null) {
     mountBuiltFrontend(app, frontend);
   }
-  const uploadJson = express.json({ limit: 78643200 });
-  app.use('/games', uploadJson);
-  app.use('/players', uploadJson);
-  app.use('/matches', uploadJson);
-  app.use('/leaderboards', uploadJson);
+  app.use('/games', uploadBodyParser({ signedIn: 78643200, guest: null }, hasSession));
+  app.use('/players', uploadBodyParser({ signedIn: 78643200, guest: null }, hasSession));
+  app.use('/matches', uploadBodyParser({ signedIn: 78643200, guest: null }, hasSession));
+  app.use('/leaderboards', uploadBodyParser({ signedIn: 78643200, guest: null }, hasSession));
   app.use(express.json({ limit: 1048576 }));
   app.get('/api/submission-token', (_request, response) => {
     response.json(issueSubmissionToken(Date.now()));

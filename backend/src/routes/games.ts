@@ -22,7 +22,6 @@ import {
   projectReadableFields,
   writtenColumns,
   queryableFieldSet,
-  readableFieldSet,
   unwritableField,
   ownedFlag,
   type Caller,
@@ -33,7 +32,7 @@ import {
 import { withTransaction } from '../transaction.js';
 import { auth } from '../auth.js';
 import { assignedColumns, mergedCandidate } from '../record-writes.js';
-import { enforceGameTypeConstraints } from '../constraints.js';
+import { enforceGameTypeConstraints, formattedRow } from '../constraints.js';
 import { collectVisibleRuleViolations } from '../rule-violations.js';
 import { deriveGameType, deriveGameTypeRows } from '../derived.js';
 import { readableDerivedRows } from '../derived-access.js';
@@ -46,11 +45,11 @@ function getSession(request: Request): ReturnType<typeof auth.api.getSession> {
 
 interface Body {
   [key: string]: unknown;
-  name: string;
-  category: string;
-  rulesVariant: string;
-  defaultRating: number;
-  description: string;
+  name?: string;
+  category?: string;
+  rulesVariant?: string;
+  defaultRating?: number;
+  description?: string;
 }
 
 function isBody(value: unknown): value is Body {
@@ -58,10 +57,11 @@ function isBody(value: unknown): value is Body {
     return false;
   }
   const body = value as Record<string, unknown>;
-  if (!(typeof body['name'] === 'string')) {
+  if (!(body['name'] === undefined || typeof body['name'] === 'string')) {
     return false;
   }
   if (!(
+    body['category'] === undefined ||
     body['category'] === '' ||
     (typeof body['category'] === 'string' &&
       ['chess', 'billiards', 'tableTennis', 'darts', 'boardGames', 'cardGames', 'custom'].includes(
@@ -70,13 +70,16 @@ function isBody(value: unknown): value is Body {
   )) {
     return false;
   }
-  if (!(typeof body['rulesVariant'] === 'string')) {
+  if (!(body['rulesVariant'] === undefined || typeof body['rulesVariant'] === 'string')) {
     return false;
   }
-  if (!(typeof body['defaultRating'] === 'number' && Number.isInteger(body['defaultRating']))) {
+  if (!(
+    body['defaultRating'] === undefined ||
+    (typeof body['defaultRating'] === 'number' && Number.isInteger(body['defaultRating']))
+  )) {
     return false;
   }
-  if (!(typeof body['description'] === 'string')) {
+  if (!(body['description'] === undefined || typeof body['description'] === 'string')) {
     return false;
   }
   return true;
@@ -224,6 +227,10 @@ gamesRouter.post('/multi-get', async (request, response) => {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
+  if (body.ids.length > 200) {
+    response.status(400).json({ error: 'ids must list at most 200 records' });
+    return;
+  }
   if (body.ids.length === 0) {
     response.json([]);
     return;
@@ -283,27 +290,45 @@ gamesRouter.get('/:id', async (request, response) => {
 
 async function createGameTypeRecord(
   response: RefusalAnswer,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  owner: string,
+  _caller: Caller
 ): Promise<Record<string, unknown> | undefined> {
   if (!isBody(body)) {
     response.status(400).json({ error: 'Invalid request body' });
     return;
   }
-  const typedBody: Body = body;
+  const typedBody: Body = formattedRow('GameType', {
+    ...body,
+    name: body.name ?? '',
+    category: body.category === undefined || body.category === '' ? 'chess' : body.category,
+    rulesVariant: body.rulesVariant ?? '',
+    defaultRating: body.defaultRating ?? 1200,
+    description: body.description ?? '',
+  });
   enforceGameTypeConstraints(typedBody);
   const id = crypto.randomUUID();
-  const inserted = await pool.query<Record<string, unknown>>(
-    'INSERT INTO "GameType" (id, "name", "category", "rulesVariant", "defaultRating", "description") VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, "name", "category", "rulesVariant", "defaultRating", "description"',
-    [
-      id,
-      typedBody.name,
-      typedBody.category === '' ? 'chess' : typedBody.category,
-      typedBody.rulesVariant,
-      typedBody.defaultRating,
-      typedBody.description,
-    ]
+  const createdRow = await withTransaction<Record<string, unknown>>(
+    pool,
+    async (client): Promise<Record<string, unknown>> => {
+      const inserted = await client.query<Record<string, unknown>>(
+        'INSERT INTO "GameType" (id, "name", "category", "rulesVariant", "defaultRating", "description") VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, "name", "category", "rulesVariant", "defaultRating", "description"',
+        [
+          id,
+          typedBody.name,
+          typedBody.category,
+          typedBody.rulesVariant,
+          typedBody.defaultRating,
+          typedBody.description,
+        ]
+      );
+      await client.query('INSERT INTO "creator_games" ("gameTypeId", "userId") VALUES ($1, $2)', [
+        id,
+        owner,
+      ]);
+      return inserted.rows[0];
+    }
   );
-  const createdRow = inserted.rows[0];
   return createdRow;
 }
 
@@ -314,10 +339,22 @@ gamesRouter.post('/', async (request, response) => {
   }
   const body = request.body as Record<string, unknown>;
   if (typeof body['recordId'] === 'string') {
+    const recordValues: unknown[] = [body['recordId']];
+    const recordAdmission = hasGrant('games', 'read', access.roles)
+      ? admissionClause('games', 'read', access, 'f', recordValues)
+      : 'FALSE';
+    const readableRecord = await pool.query(
+      `SELECT 1 FROM "GameType" f${whereClause(['f.id = $1', recordAdmission])}`,
+      recordValues
+    );
+    if (readableRecord.rows.length === 0) {
+      response.status(404).json({ error: 'Record not found' });
+      return;
+    }
     response.status(201).json({ success: true });
     return;
   }
-  const createdRow = await createGameTypeRecord(response, body);
+  const createdRow = await createGameTypeRecord(response, body, access.userId ?? '', access);
   if (createdRow === undefined) {
     return;
   }
@@ -430,6 +467,9 @@ gamesRouter.delete('/:id', async (request, response) => {
       if (existingItem.rows.length === 0) {
         return 'not-found';
       }
+      await client.query('DELETE FROM "creator_games" WHERE "gameTypeId" = $1', [
+        request.params.id,
+      ]);
       const deleted = await client.query('DELETE FROM "GameType" WHERE id = $1', [
         request.params.id,
       ]);
@@ -454,18 +494,17 @@ gamesViolationsRouter.get('/', async (request, response) => {
     return;
   }
   const values: unknown[] = [];
+  const owned = ownedColumn('games', 'read', access, 'f', values);
   const admission = admissionClause('games', 'read', access, 'f', values);
   const { rows } = await pool.query<Record<string, unknown>>(
-    `SELECT f.id FROM "GameType" f${whereClause([admission])}`,
+    `SELECT f.*, ${owned} FROM "GameType" f${whereClause([admission])}`,
     values
   );
-  const visibleIds = rows.map((row) => String(row.id));
   response.json(
     await collectVisibleRuleViolations(
       pool,
       'GameType',
-      new Set(visibleIds),
-      readableFieldSet('games', access.roles)
+      admitRows('games', 'read', access.roles, rows)
     )
   );
 });

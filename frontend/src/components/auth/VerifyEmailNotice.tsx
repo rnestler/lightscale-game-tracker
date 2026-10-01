@@ -1,3 +1,4 @@
+import { i18n } from '../../i18n/text';
 import type { JSX } from 'react';
 import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth.js';
@@ -24,7 +25,7 @@ export function VerifyEmailNotice({ email, onBack }: VerifyEmailNoticeProperties
       setStatus('sent');
     } catch (err) {
       setStatus('idle');
-      setError(getErrorMessage(err, 'Could not resend the email. Try again.'));
+      setError(getErrorMessage(err, i18n.chrome.verificationResendFailed));
     }
   };
 
@@ -48,17 +49,17 @@ export function VerifyEmailNotice({ email, onBack }: VerifyEmailNoticeProperties
       </div>
       <div className="flex flex-col gap-2">
         <h2 className="text-xl md:text-2xl font-normal leading-tight text-foreground">
-          Verify your email
+          {i18n.chrome.verifyEmailTitle}
         </h2>
         <p className="text-sm text-muted-foreground">
-          We sent a verification link to{' '}
+          {i18n.chrome.verifyEmailDescription}{' '}
           <span className="font-medium text-foreground">{email}</span>.
         </p>
       </div>
 
       {!setupStatus.emailDelivery && (
         <div className="rounded-lg border border-border bg-secondary p-3 text-sm text-foreground">
-          Email delivery is not configured. Find the verification link in the backend shell log.
+          {i18n.chrome.emailDeliveryNotConfigured}
         </div>
       )}
 
@@ -70,29 +71,33 @@ export function VerifyEmailNotice({ email, onBack }: VerifyEmailNoticeProperties
 
       {status === 'sent' && (
         <div className="rounded-lg border border-border bg-secondary p-3 text-sm text-foreground">
-          Verification email sent. Check your inbox.
+          {i18n.chrome.verificationResent}
         </div>
       )}
 
       <div className="flex flex-col gap-3">
-        <Button
-          type="button"
-          onClick={() => {
-            handleResend().catch(console.error);
-          }}
-          disabled={status === 'sending'}
-          className="bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-primary"
-          size="lg"
-        >
-          {status === 'sending' ? 'Sending…' : 'Resend email'}
-        </Button>
+        {setupStatus.capabilities.emailVerification && (
+          <Button
+            type="button"
+            onClick={() => {
+              handleResend().catch(console.error);
+            }}
+            disabled={status === 'sending'}
+            className="bg-primary text-primary-foreground hover:opacity-90 focus-visible:outline-primary"
+            size="lg"
+          >
+            {status === 'sending'
+              ? i18n.chrome.verificationResending
+              : i18n.chrome.verificationResend}
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"
           onClick={onBack}
           className="text-foreground hover:opacity-80 focus-visible:outline-primary"
         >
-          Back to sign in
+          {i18n.chrome.backToSignIn}
         </Button>
       </div>
     </div>
